@@ -1,0 +1,18 @@
+[build]
+target = "x86_64-os"
+
+[target.x86_64-os]
+rustflags = [
+    "-Zunstable-options",
+    "-C",
+    "code-model=kernel",
+    "-C",
+    "link-arg=-Tkernel/linker.ld",
+]
+
+[env]
+RUST_TARGET_PATH = { value = ".", relative = true }
+
+[unstable]
+build-std = ["core", "alloc"]
+build-std-features = ["compiler-builtins-mem"]

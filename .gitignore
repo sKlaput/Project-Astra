@@ -1,0 +1,8 @@
+/target/
+/build/
+/.vscode/
+*.log
+*.img
+*.iso
+*.efi
+*.pdb
