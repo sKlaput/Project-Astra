@@ -98,9 +98,18 @@ pub trait App {
     }
 
     /// Periodic refresh interval in milliseconds, or `None` for on-demand only.
-    /// When `Some(ms)` is returned the compositor will re-damage the client area
-    /// every `ms` milliseconds automatically (e.g. system monitor live stats).
+    /// When `Some(ms)` is returned the compositor calls `tick()` every `ms`
+    /// milliseconds and acts on the returned `AppAction`.
     fn refresh_interval_ms(&self) -> Option<u64> {
         None
+    }
+
+    /// Called by the compositor on each refresh tick (see `refresh_interval_ms`).
+    /// Return `AppAction::Nothing` to skip the redraw this cycle (useful when
+    /// the app can detect that its displayed data has not changed).
+    /// Default returns `RedrawAll` to preserve existing behaviour for apps that
+    /// do not override this method.
+    fn tick(&mut self) -> AppAction {
+        AppAction::RedrawAll
     }
 }

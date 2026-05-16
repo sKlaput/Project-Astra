@@ -29,12 +29,48 @@ const CHAR_H: usize = 8 * SCALE;   // 16
 const PAD_X:  usize = 14;
 const PAD_Y:  usize = 10;
 
+// ── Stats snapshot for change detection ─────────────────────────────────────
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+struct StatsSnap {
+    uptime_secs: u64,
+    heap_used_kb: u64,
+    heap_pages:   u64,
+    runnable:     u64,
+    win_count:    u64,
+    proc_count:   u64,
+}
+
+impl StatsSnap {
+    fn current() -> Self {
+        let ms  = crate::arch::x86_64::interrupts::uptime_ms();
+        let heap = crate::memory::heap::get_telemetry();
+        let used_kb = (heap.used_bytes / 1024) as u64;
+        let pages   = heap.mapped_pages as u64;
+        let runnable = crate::scheduler::runnable_count() as u64;
+        let win_count = crate::desktop::WIN_TABLE.lock().count as u64;
+        let (_, proc_count) = crate::process::list_all();
+        StatsSnap {
+            uptime_secs: ms / 1000,
+            heap_used_kb: used_kb,
+            heap_pages: pages,
+            runnable,
+            win_count,
+            proc_count: proc_count as u64,
+        }
+    }
+}
+
 // ── App struct ────────────────────────────────────────────────────────────────
 
-pub struct SysMonitorApp;
+pub struct SysMonitorApp {
+    last_snap: StatsSnap,
+}
 
 impl SysMonitorApp {
-    pub fn new() -> Self { SysMonitorApp }
+    pub fn new() -> Self {
+        SysMonitorApp { last_snap: StatsSnap::current() }
+    }
 }
 
 impl App for SysMonitorApp {
@@ -53,12 +89,25 @@ impl App for SysMonitorApp {
         }
     }
 
-    fn refresh_interval_ms(&self) -> Option<u64> { Some(250) }
+    fn refresh_interval_ms(&self) -> Option<u64> { Some(500) }
+
+    fn tick(&mut self) -> crate::app::AppAction {
+        let snap = StatsSnap::current();
+        if snap == self.last_snap {
+            crate::app::AppAction::Nothing
+        } else {
+            self.last_snap = snap;
+            crate::app::AppAction::RedrawAll
+        }
+    }
 }
 
 // ── Stats renderer ────────────────────────────────────────────────────────────
 
 fn render_stats(cx: usize, cy: usize, cw: usize, ch: usize) {
+    // Clear background so stale values from the previous tick don't show through.
+    framebuffer::fill_rect(cx, cy, cw, ch, BG);
+
     let inner_x = cx + PAD_X;
     let mut y = cy + PAD_Y;
     let section_gap = CHAR_H + 6;

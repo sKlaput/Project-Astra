@@ -1663,7 +1663,20 @@ impl Desktop {
             if let Some(interval) = self.windows[i].app.refresh_interval_ms() {
                 if now.wrapping_sub(self.windows[i].last_refresh_ms) >= interval {
                     self.windows[i].last_refresh_ms = now;
-                    self.damage.add(self.windows[i].client_rect());
+                    match self.windows[i].app.tick() {
+                        AppAction::Nothing => {}
+                        AppAction::RedrawArea(rx, ry, rw, rh) => {
+                            let cr = self.windows[i].client_rect();
+                            let rx = rx.min(cr.w);
+                            let ry = ry.min(cr.h);
+                            let rw = rw.min(cr.w.saturating_sub(rx));
+                            let rh = rh.min(cr.h.saturating_sub(ry));
+                            if rw != 0 && rh != 0 {
+                                self.damage.add(Rect { x: cr.x + rx, y: cr.y + ry, w: rw, h: rh });
+                            }
+                        }
+                        _ => self.damage.add(self.windows[i].client_rect()),
+                    }
                 }
             }
         }
