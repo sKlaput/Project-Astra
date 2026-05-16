@@ -1559,24 +1559,39 @@ impl Desktop {
 
             for win_idx in 0..self.windows.len() {
                 if !self.windows[win_idx].minimized && self.windows[win_idx].bounds().intersects(&dirty) {
-                    let is_dragged = self.drag.as_ref().map_or(false, |d| d.win_idx == win_idx);
                     let cr = self.windows[win_idx].client_rect();
                     let cache_ok = self.windows[win_idx].surface_valid
                         && self.windows[win_idx].surface_w == cr.w
                         && self.windows[win_idx].surface_h == cr.h
                         && !self.windows[win_idx].cached_surface.is_empty();
 
-                    if is_dragged && cache_ok {
+                    if cache_ok {
                         // Chrome (titlebar, border, shadow) — no app.render().
+                        // Chrome calls respect scissor, so they self-clip to `dirty`.
                         self.render_window_chrome(win_idx, focused == Some(win_idx));
-                        // Blit cached client pixels directly into the backbuffer.
-                        // write_rect ignores the scissor, but the client rect is always
-                        // fully inside the drag damage union rect, so no out-of-bounds write.
-                        framebuffer::write_rect(cr.x, cr.y, cr.w, cr.h,
-                            &self.windows[win_idx].cached_surface);
+
+                        // Blit cached client pixels.  write_rect_sub bypasses the
+                        // scissor, so we manually clip to (dirty ∩ client_rect) to
+                        // avoid stomping pixels outside the damage area (which could
+                        // contain another window/icon not yet recomposed for that rect).
+                        let ix0 = cr.x.max(dirty.x);
+                        let iy0 = cr.y.max(dirty.y);
+                        let ix1 = (cr.x + cr.w).min(dirty.x + dirty.w);
+                        let iy1 = (cr.y + cr.h).min(dirty.y + dirty.h);
+                        if ix1 > ix0 && iy1 > iy0 {
+                            let iw = ix1 - ix0;
+                            let ih = iy1 - iy0;
+                            let sub_x = ix0 - cr.x;
+                            let sub_y = iy0 - cr.y;
+                            framebuffer::write_rect_sub(
+                                ix0, iy0, iw, ih,
+                                &self.windows[win_idx].cached_surface,
+                                cr.w, sub_x, sub_y,
+                            );
+                        }
                     } else {
-                        // Full render: chrome + app.render().  Schedule capture so future
-                        // drag frames can use the cache instead.
+                        // Full render: chrome + app.render().  Schedule capture so
+                        // subsequent frames can blit from the cache instead.
                         self.render_window(win_idx, focused == Some(win_idx));
                         self.windows[win_idx].surface_needs_capture = true;
                     }
