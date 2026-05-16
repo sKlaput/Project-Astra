@@ -830,6 +830,15 @@ struct Window {
     minimized: bool,
     last_refresh_ms: u64,
     app: Box<dyn App>,
+    // ── Surface cache ─────────────────────────────────────────────────
+    // Stores the last-rendered client-area pixels (row-major, ARGB32).
+    // When valid, compose_damage can blit this instead of calling app.render(),
+    // which eliminates redundant text/background rendering during drag/resize.
+    cached_surface: Vec<u32>,
+    surface_valid: bool,      // false = must call app.render() and re-capture
+    surface_w: usize,         // client width at capture time
+    surface_h: usize,         // client height at capture time
+    surface_needs_capture: bool, // set after a full render; triggers read_rect capture
 }
 
 impl Window {
@@ -1162,7 +1171,9 @@ impl Desktop {
         self.cascade_x = cx + CASCADE_STEP;
         self.cascade_y = cy + CASCADE_STEP;
 
-        let win = Window { x: cx, y: cy, w, h, minimized: false, last_refresh_ms: 0, app };
+        let win = Window { x: cx, y: cy, w, h, minimized: false, last_refresh_ms: 0, app,
+            cached_surface: Vec::new(), surface_valid: false,
+            surface_w: 0, surface_h: 0, surface_needs_capture: false };
         let b = win.bounds();
         self.windows.push(win);
         self.focused = Some(self.windows.len() - 1);
@@ -1446,6 +1457,34 @@ impl Desktop {
         framebuffer::draw_text_at(pr.x + 4, pr.y + DP_H + 2, "Enter=ok  Esc=cancel", 0x2A5070);
     }
 
+    /// Renders only the chrome (shadow, border, titlebar, close button).
+    /// Does NOT call app.render() — client area is filled with WIN_BG only.
+    /// Used during drag when the cached surface is blitted separately.
+    fn render_window_chrome(&self, idx: usize, focused: bool) {
+        let win = &self.windows[idx];
+        if win.minimized { return; }
+        let x = win.x.max(0) as usize;
+        let y = win.y.max(0) as usize;
+        let (w, h) = (win.w, win.h);
+        framebuffer::fill_rect(x + WIN_SHADOW_OFS, y + WIN_SHADOW_OFS, w, h, WIN_SHADOW);
+        let border = if focused { WIN_BORDER_FOC } else { WIN_BORDER };
+        framebuffer::fill_rect(x, y, w, h, border);
+        framebuffer::fill_rect(x + 1, y + 1, w.saturating_sub(2), h.saturating_sub(2), WIN_BG);
+        let bar_bg = if focused { WIN_BAR_FOC } else { WIN_BAR_BG };
+        framebuffer::fill_rect(x, y, w, WIN_BAR_H, bar_bg);
+        framebuffer::fill_rect(x, y + WIN_BAR_H, w, 1, WIN_BAR_BORDER);
+        let title = win.app.title();
+        let ty = y + (WIN_BAR_H.saturating_sub(14)) / 2;
+        framebuffer::draw_text_scaled(x + WIN_PAD_X, ty, title, WIN_TITLE_COL, 2);
+        let cb = win.close_btn_rect();
+        let close_bg = if self.close_hover == Some(idx) { WIN_CLOSE_HOV } else { bar_bg };
+        framebuffer::fill_rect(cb.x, cb.y, cb.w, cb.h, close_bg);
+        framebuffer::draw_text_at(cb.x + (cb.w.saturating_sub(6)) / 2, cb.y + (cb.h.saturating_sub(8)) / 2, "X", WIN_TITLE_COL);
+        let hint = "[ESC]";
+        let hx = cb.x.saturating_sub(hint.len() * 6 + 6);
+        framebuffer::draw_text_at(hx, ty + 2, hint, WIN_HINT_COL);
+    }
+
     fn render_window(&self, idx: usize, focused: bool) {        let win = &self.windows[idx];
         if win.minimized { return; }
         let x = win.x.max(0) as usize;
@@ -1520,7 +1559,27 @@ impl Desktop {
 
             for win_idx in 0..self.windows.len() {
                 if !self.windows[win_idx].minimized && self.windows[win_idx].bounds().intersects(&dirty) {
-                    self.render_window(win_idx, focused == Some(win_idx));
+                    let is_dragged = self.drag.as_ref().map_or(false, |d| d.win_idx == win_idx);
+                    let cr = self.windows[win_idx].client_rect();
+                    let cache_ok = self.windows[win_idx].surface_valid
+                        && self.windows[win_idx].surface_w == cr.w
+                        && self.windows[win_idx].surface_h == cr.h
+                        && !self.windows[win_idx].cached_surface.is_empty();
+
+                    if is_dragged && cache_ok {
+                        // Chrome (titlebar, border, shadow) — no app.render().
+                        self.render_window_chrome(win_idx, focused == Some(win_idx));
+                        // Blit cached client pixels directly into the backbuffer.
+                        // write_rect ignores the scissor, but the client rect is always
+                        // fully inside the drag damage union rect, so no out-of-bounds write.
+                        framebuffer::write_rect(cr.x, cr.y, cr.w, cr.h,
+                            &self.windows[win_idx].cached_surface);
+                    } else {
+                        // Full render: chrome + app.render().  Schedule capture so future
+                        // drag frames can use the cache instead.
+                        self.render_window(win_idx, focused == Some(win_idx));
+                        self.windows[win_idx].surface_needs_capture = true;
+                    }
                 }
             }
 
@@ -1539,6 +1598,24 @@ impl Desktop {
         }
 
         framebuffer::clear_scissor();
+
+        // ── Surface capture ───────────────────────────────────────────────
+        // After all damage rects are composited, read back client pixels for
+        // any window that was fully re-rendered this pass.  Future drag frames
+        // will blit from this cache instead of calling app.render().
+        for win_idx in 0..self.windows.len() {
+            if !self.windows[win_idx].surface_needs_capture { continue; }
+            self.windows[win_idx].surface_needs_capture = false;
+            let cr = self.windows[win_idx].client_rect();
+            let n = cr.w * cr.h;
+            if n == 0 { continue; }
+            self.windows[win_idx].cached_surface.resize(n, 0);
+            framebuffer::read_rect(cr.x, cr.y, cr.w, cr.h,
+                &mut self.windows[win_idx].cached_surface);
+            self.windows[win_idx].surface_w = cr.w;
+            self.windows[win_idx].surface_h = cr.h;
+            self.windows[win_idx].surface_valid = true;
+        }
     }
 
     // ── Cursor ────────────────────────────────────────────────────────────
@@ -1676,6 +1753,7 @@ impl Desktop {
                     match self.windows[i].app.tick() {
                         AppAction::Nothing => {}
                         AppAction::RedrawArea(rx, ry, rw, rh) => {
+                            self.windows[i].surface_valid = false;
                             let cr = self.windows[i].client_rect();
                             let rx = rx.min(cr.w);
                             let ry = ry.min(cr.h);
@@ -1685,7 +1763,10 @@ impl Desktop {
                                 self.damage.add(Rect { x: cr.x + rx, y: cr.y + ry, w: rw, h: rh });
                             }
                         }
-                        _ => self.damage.add(self.windows[i].client_rect()),
+                        _ => {
+                            self.windows[i].surface_valid = false;
+                            self.damage.add(self.windows[i].client_rect());
+                        }
                     }
                 }
             }
@@ -2447,12 +2528,14 @@ impl Desktop {
             AppAction::Close => { self.close_window(win_idx); }
             AppAction::RedrawAll => {
                 if win_idx < self.windows.len() {
+                    self.windows[win_idx].surface_valid = false;
                     let b = self.windows[win_idx].client_rect();
                     self.damage.add(b);
                 }
             }
             AppAction::RedrawArea(rx, ry, rw, rh) => {
                 if win_idx < self.windows.len() {
+                    self.windows[win_idx].surface_valid = false;
                     let cr = self.windows[win_idx].client_rect();
                     let rx = rx.min(cr.w);
                     let ry = ry.min(cr.h);
