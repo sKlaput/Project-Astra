@@ -1057,11 +1057,13 @@ struct Desktop {
     desk_prompt: DesktopNamePrompt,
     desk_item_drag: Option<DeskItemDrag>,
     // ── Drag rate-limiter ─────────────────────────────────────────────────
-    // Tracks the window position that was last composited during a drag so
-    // we can add the full swept union when we next render.  Without this,
-    // skipped frames would leave a ghost of the window at its old position.
-    drag_rendered_bounds: Option<Rect>,
-    last_drag_render_ms: u64,
+    // Accumulates the union of all window positions (old + new) that have not
+    // yet been composited.  Flushed to the damage list at most every 16 ms
+    // (~60 fps cap) so QEMU's VGA emulation is not overwhelmed by 100 Hz
+    // MMIO storms.  Reset to Some(latest_bounds) after each present so the
+    // next frame correctly erases the last-drawn position.
+    drag_damage_accum: Option<Rect>,
+    last_drag_present_ms: u64,
 }
 
 impl Desktop {
@@ -1099,8 +1101,8 @@ impl Desktop {
             desk_item_count: 0,
             desk_prompt: DesktopNamePrompt::hidden(),
             desk_item_drag: None,
-            drag_rendered_bounds: None,
-            last_drag_render_ms: 0,
+            drag_damage_accum: None,
+            last_drag_present_ms: 0,
         }
     }
 
@@ -1773,6 +1775,10 @@ impl Desktop {
         if let Some(ref ds) = self.drag {
             let idx = ds.win_idx; let ox = ds.off_x; let oy = ds.off_y;
             if idx < self.windows.len() {
+                // Capture old bounds BEFORE updating position so the accumulator
+                // includes both the previous and new window positions.
+                let old_b = self.windows[idx].bounds();
+
                 // Clamp so at least WIN_BAR_H*3 px of the title bar stays on-screen
                 // horizontally — prevents windows being dragged off into the void.
                 let win_w = self.windows[idx].w as i32;
@@ -1781,25 +1787,24 @@ impl Desktop {
                     .max(keep - win_w)
                     .min(self.sw as i32 - keep);
                 self.windows[idx].y = (my - oy).max(BAR_H as i32);
-
-                // Rate-limit drag compositing to ~60 fps.  Position updates happen
-                // every PIT tick (100 Hz) but full compose+present of a large window
-                // at 100 Hz saturates QEMU's VGA emulation.
-                // We accumulate the union of all swept positions so that when we DO
-                // fire, the entire trail is erased in a single compose pass — no ghosts.
                 let new_b = self.windows[idx].bounds();
-                let swept = match self.drag_rendered_bounds {
-                    Some(prev) => prev.union(&new_b),
-                    None       => new_b,
+
+                // Accumulate: union(accum, old_b, new_b) so we track every pixel
+                // the window swept through, even across skipped frames.
+                let accum = match self.drag_damage_accum {
+                    Some(prev) => prev.union(&old_b).union(&new_b),
+                    None       => old_b.union(&new_b),
                 };
+                self.drag_damage_accum = Some(accum);
+
+                // Rate-limit: flush to damage list at most every 16 ms (~60 fps).
                 let now_ms = uptime_ms();
-                if now_ms.wrapping_sub(self.last_drag_render_ms) >= 16 {
-                    self.damage.add(swept);
-                    self.drag_rendered_bounds = Some(new_b);
-                    self.last_drag_render_ms = now_ms;
+                if now_ms.wrapping_sub(self.last_drag_present_ms) >= 16 {
+                    self.damage.add(accum);
+                    // Reset accum to latest bounds so next frame erases from here.
+                    self.drag_damage_accum = Some(new_b);
+                    self.last_drag_present_ms = now_ms;
                 }
-                // If we skip this frame, drag_rendered_bounds keeps the last
-                // rendered position so the next rendered frame uses the full union.
             }
         }
 
@@ -1999,8 +2004,8 @@ impl Desktop {
                 if !(mx as usize >= cb.x && (mx as usize) < cb.x + cb.w
                     && my as usize >= cb.y && (my as usize) < cb.y + cb.h) {
                     let ox = mx - win.x; let oy = my - win.y;
-                    self.drag_rendered_bounds = Some(self.windows[tidx].bounds());
-                    self.last_drag_render_ms = uptime_ms();
+                    self.drag_damage_accum = Some(self.windows[tidx].bounds());
+                    self.last_drag_present_ms = uptime_ms();
                     self.drag = Some(DragState { win_idx: tidx, off_x: ox, off_y: oy });
                 }
                 return;
@@ -2355,14 +2360,14 @@ impl Desktop {
             let idx = ds.win_idx;
             if idx < self.windows.len() {
                 let final_b = self.windows[idx].bounds();
-                let swept = match self.drag_rendered_bounds {
+                let flush = match self.drag_damage_accum {
                     Some(prev) => prev.union(&final_b),
                     None       => final_b,
                 };
-                self.damage.add(swept);
+                self.damage.add(flush);
             }
         }
-        self.drag_rendered_bounds = None;
+        self.drag_damage_accum = None;
         self.drag = None;
         self.resize = None;
         if let Some(ref ids) = self.icon_drag {
