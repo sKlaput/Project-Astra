@@ -156,7 +156,7 @@ scripts/
   run-qemu.ps1       — build + launch QEMU
   build-image.ps1    — assemble EFI boot image
 docs/
-  astra_os_roadmap.md — full project roadmap
+  roadmap.md             — project roadmap
 ```
 
 ---
@@ -169,7 +169,7 @@ docs/
 | v0.2 — ARP → IPv4 → ICMP → UDP → DNS → TCP → HTTP GET | 🔧 In progress |
 | v0.3 — Physical hardware, multi-core | 🗓 Planned |
 
-See [docs/astra_os_roadmap.md](docs/astra_os_roadmap.md) for details.
+See [docs/roadmap.md](docs/roadmap.md) for details.
 
 ---
 
