@@ -985,6 +985,7 @@ struct DeskItemDrag {
     idx: usize,
     off_x: i32,
     off_y: i32,
+    moved: bool,
 }
 
 struct ResizeState {
@@ -1731,7 +1732,7 @@ impl Desktop {
             self.damage.add(new_r);
         }
 
-        if let Some(ref di_drag) = self.desk_item_drag {
+        if let Some(ref mut di_drag) = self.desk_item_drag {
             let idx = di_drag.idx;
             let ox = di_drag.off_x;
             let oy = di_drag.off_y;
@@ -1741,6 +1742,7 @@ impl Desktop {
                 let new_y = (my - oy).max(BAR_H as i32).min((self.sh.saturating_sub(DI_H)) as i32);
                 self.desk_items[idx].x = new_x;
                 self.desk_items[idx].y = new_y;
+                di_drag.moved = true;
                 let new_r = self.desk_items[idx].rect();
                 self.damage.add(old_r);
                 self.damage.add(new_r);
@@ -2023,6 +2025,7 @@ impl Desktop {
                     idx: di,
                     off_x: mx - r.x as i32,
                     off_y: my - r.y as i32,
+                    moved: false,
                 });
             }
             self.damage.mark_full();
@@ -2325,15 +2328,15 @@ impl Desktop {
             }
         }
         self.icon_drag = None;
-        // Release desk item drag — just drop it wherever it is (no snap)
-        let had_desk_drag = self.desk_item_drag.is_some();
+        // Release desk item drag — only save if the item actually moved
+        let should_save = self.desk_item_drag.as_ref().map_or(false, |d| d.moved);
         if let Some(ref ddi) = self.desk_item_drag {
             if ddi.idx < self.desk_item_count {
                 self.damage.add(self.desk_items[ddi.idx].rect());
             }
         }
         self.desk_item_drag = None;
-        if had_desk_drag { self.save_desktop_state(); }
+        if should_save { self.save_desktop_state(); }
         self.update_cursor_shape();
     }
 
@@ -2356,7 +2359,8 @@ impl Desktop {
                     }
                 }
                 Key::Char(c) => {
-                    if c >= 0x20 && c < 0x7F && c != b'/' && self.desk_prompt.len < 28 {
+                    let invalid_char = matches!(c, b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|');
+                    if c >= 0x20 && c < 0x7F && !invalid_char && self.desk_prompt.len < 28 {
                         self.desk_prompt.buf[self.desk_prompt.len] = c;
                         self.desk_prompt.len += 1;
                         self.damage.add(Rect { x: pr.x, y: pr.y.saturating_sub(16), w: pr.w, h: pr.h + 30 });

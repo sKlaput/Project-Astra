@@ -1338,7 +1338,8 @@ impl FileManagerApp {
                 }
                 Key::Char(c) if self.prompt.kind != PromptKind::ConfirmDel => {
                     // Accept printable ASCII except '/' (invalid in filenames)
-                    if c >= 0x20 && c < 0x7F && c != b'/' && self.prompt.len < 32 {
+                    let invalid_char = matches!(c, b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|');
+                    if c >= 0x20 && c < 0x7F && !invalid_char && self.prompt.len < 32 {
                         self.prompt.buf[self.prompt.len] = c;
                         self.prompt.len += 1;
                         return AppAction::RedrawAll;
