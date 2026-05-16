@@ -94,9 +94,23 @@ impl App for SysMonitorApp {
     fn tick(&mut self) -> crate::app::AppAction {
         let snap = StatsSnap::current();
         if snap == self.last_snap {
-            crate::app::AppAction::Nothing
+            return crate::app::AppAction::Nothing;
+        }
+        // Only uptime ticked — redraw the single 900×16 uptime row instead of
+        // the full 900×520 window.  The compositor scissor clips render() to
+        // just those pixels, so the present blit is ~14 KB instead of ~1.8 MB.
+        let only_uptime = snap.uptime_secs  != self.last_snap.uptime_secs
+            && snap.heap_used_kb == self.last_snap.heap_used_kb
+            && snap.heap_pages   == self.last_snap.heap_pages
+            && snap.runnable     == self.last_snap.runnable
+            && snap.win_count    == self.last_snap.win_count
+            && snap.proc_count   == self.last_snap.proc_count;
+        self.last_snap = snap;
+        if only_uptime {
+            // Uptime row y-offset inside the client rect:
+            //   PAD_Y(10) + CHAR_H+4(20) + separator(1) + gap(8) = 39, give 2px slack.
+            crate::app::AppAction::RedrawArea(0, 37, 900, CHAR_H + 4)
         } else {
-            self.last_snap = snap;
             crate::app::AppAction::RedrawAll
         }
     }
