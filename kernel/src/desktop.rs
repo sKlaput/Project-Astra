@@ -1056,6 +1056,12 @@ struct Desktop {
     desk_item_count: usize,
     desk_prompt: DesktopNamePrompt,
     desk_item_drag: Option<DeskItemDrag>,
+    // ── Drag rate-limiter ─────────────────────────────────────────────────
+    // Tracks the window position that was last composited during a drag so
+    // we can add the full swept union when we next render.  Without this,
+    // skipped frames would leave a ghost of the window at its old position.
+    drag_rendered_bounds: Option<Rect>,
+    last_drag_render_ms: u64,
 }
 
 impl Desktop {
@@ -1093,6 +1099,8 @@ impl Desktop {
             desk_item_count: 0,
             desk_prompt: DesktopNamePrompt::hidden(),
             desk_item_drag: None,
+            drag_rendered_bounds: None,
+            last_drag_render_ms: 0,
         }
     }
 
@@ -1765,7 +1773,6 @@ impl Desktop {
         if let Some(ref ds) = self.drag {
             let idx = ds.win_idx; let ox = ds.off_x; let oy = ds.off_y;
             if idx < self.windows.len() {
-                let old_b = self.windows[idx].bounds();
                 // Clamp so at least WIN_BAR_H*3 px of the title bar stays on-screen
                 // horizontally — prevents windows being dragged off into the void.
                 let win_w = self.windows[idx].w as i32;
@@ -1774,9 +1781,25 @@ impl Desktop {
                     .max(keep - win_w)
                     .min(self.sw as i32 - keep);
                 self.windows[idx].y = (my - oy).max(BAR_H as i32);
+
+                // Rate-limit drag compositing to ~60 fps.  Position updates happen
+                // every PIT tick (100 Hz) but full compose+present of a large window
+                // at 100 Hz saturates QEMU's VGA emulation.
+                // We accumulate the union of all swept positions so that when we DO
+                // fire, the entire trail is erased in a single compose pass — no ghosts.
                 let new_b = self.windows[idx].bounds();
-                self.damage.add(old_b);
-                self.damage.add(new_b);
+                let swept = match self.drag_rendered_bounds {
+                    Some(prev) => prev.union(&new_b),
+                    None       => new_b,
+                };
+                let now_ms = uptime_ms();
+                if now_ms.wrapping_sub(self.last_drag_render_ms) >= 16 {
+                    self.damage.add(swept);
+                    self.drag_rendered_bounds = Some(new_b);
+                    self.last_drag_render_ms = now_ms;
+                }
+                // If we skip this frame, drag_rendered_bounds keeps the last
+                // rendered position so the next rendered frame uses the full union.
             }
         }
 
@@ -1976,6 +1999,8 @@ impl Desktop {
                 if !(mx as usize >= cb.x && (mx as usize) < cb.x + cb.w
                     && my as usize >= cb.y && (my as usize) < cb.y + cb.h) {
                     let ox = mx - win.x; let oy = my - win.y;
+                    self.drag_rendered_bounds = Some(self.windows[tidx].bounds());
+                    self.last_drag_render_ms = uptime_ms();
                     self.drag = Some(DragState { win_idx: tidx, off_x: ox, off_y: oy });
                 }
                 return;
@@ -2324,6 +2349,20 @@ impl Desktop {
     }
 
     fn on_button_release(&mut self) {
+        // Flush any drag frames that were skipped by the rate-limiter so the
+        // window snaps to its final position with no ghost artifact.
+        if let Some(ref ds) = self.drag {
+            let idx = ds.win_idx;
+            if idx < self.windows.len() {
+                let final_b = self.windows[idx].bounds();
+                let swept = match self.drag_rendered_bounds {
+                    Some(prev) => prev.union(&final_b),
+                    None       => final_b,
+                };
+                self.damage.add(swept);
+            }
+        }
+        self.drag_rendered_bounds = None;
         self.drag = None;
         self.resize = None;
         if let Some(ref ids) = self.icon_drag {
