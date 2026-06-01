@@ -1,0 +1,84 @@
+AstraOS v0.2 Networking Release Playbook
+Created: 2026-06-01
+
+Purpose
+- Keep a stable rollback point while implementing networking for v0.2.
+- Define exact work order and release gates.
+
+Rollback Baseline (DO NOT REWRITE)
+- Baseline commit: b077df0
+- Baseline tag: v0.1.0-persistent-desktop
+- Branch at creation time: main
+
+Quick Rollback Commands
+1) Inspect current state
+   git log --oneline -n 10
+
+2) Create rescue branch before rollback
+   git branch rescue-before-v0.2-rollback
+
+3) Roll back main to baseline commit
+   git checkout main
+   git reset --hard b077df0
+
+4) Push rollback to remote (only if intentionally restoring remote main)
+   git push --force-with-lease origin main
+
+Safer Alternative (No history rewrite)
+- Create a new branch from baseline instead of resetting main:
+  git checkout -b v0.2-from-baseline b077df0
+
+v0.2 Scope
+- ARP reliability and cache policy
+- IPv4 send/receive validation
+- ICMP ping stability
+- UDP robustness
+- DNS reliability
+- TCP handshake/data/close reliability
+- HTTP GET stability over TCP
+
+Execution Order (Do in sequence)
+1) ARP hardening
+   - Add retry policy and timeout behavior
+   - Add cache aging / eviction policy checks
+   - Verify gateway and peer resolution remains stable across repeated runs
+
+2) ICMP validation
+   - Make ping deterministic (gateway + external target)
+   - Confirm RTT output and timeout handling
+
+3) DNS reliability
+   - Validate repeated hostname resolution (same and different hosts)
+   - Verify timeout and malformed response handling
+
+4) TCP reliability
+   - Add retransmit/timeout for SYN, data, FIN paths
+   - Verify state transitions on packet loss/timeouts
+
+5) HTTP validation
+   - Repeatable HTTP GET to known host/path
+   - Validate partial reads and close behavior
+
+Release Gates (must pass before v0.2 tag)
+- Gate 1: ping succeeds repeatedly across multiple boots
+- Gate 2: dns resolves known hosts repeatedly
+- Gate 3: http fetch returns valid response body repeatedly
+- Gate 4: no regressions in desktop/apps during network traffic
+
+Suggested Test Loop Per Candidate
+- Fresh boot
+- Run: net
+- Run: ping 10.0.2.2
+- Run: dns example.com
+- Run: http http://example.com/
+- Repeat 3 times per boot, then repeat across 3 boots
+
+Versioning Rules
+- Keep this file updated when scope changes
+- For each milestone completion, add:
+  - commit hash
+  - date
+  - pass/fail summary
+
+Milestone Log
+- 2026-06-01: Playbook created at baseline b077df0.
