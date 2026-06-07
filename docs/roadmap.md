@@ -19,18 +19,19 @@ _Released May 2026_
 
 ---
 
-## v0.2 — Networking Stack 🔧
-_In progress_
+## v0.2 — Networking Stack ✅
+_Released June 2026_
 
-Goal: make `ping` work from the terminal, then basic HTTP GET.
-
-- [ ] ARP — resolve IPv4 → MAC, reply to incoming ARP requests
-- [ ] IPv4 — send/receive packets, checksum, fragmentation-free path
-- [ ] ICMP — echo request/reply (`ping` terminal command)
-- [ ] UDP — send/receive datagrams
-- [ ] DNS — resolve hostnames over UDP
-- [ ] TCP — 3-way handshake, reliable byte stream
-- [ ] HTTP — `GET /` over TCP, print response to terminal
+- [x] ARP — resolve IPv4 → MAC, TTL cache, resolve_with_retry
+- [x] IPv4 — send/receive packets, checksum
+- [x] ICMP — echo request/reply (`ping` terminal command)
+- [x] UDP — send/receive datagrams (512-byte RX buffer)
+- [x] DNS — resolve hostnames over UDP, Result+DnsError variants
+- [x] TCP — 3-way handshake, reliable byte stream, retransmit, per-conn ISN
+- [x] HTTP — `GET /` over TCP, print response to terminal
+- [x] `netcheck` command — 3-run ping/DNS/HTTP health check, 3/3/3 ✅
+- [x] Mouse scroll — IntelliMouse protocol, terminal scroll wheel
+- [x] Terminal cursor editing — Left/Right/Home/End/Delete, insert-at-cursor
 
 ---
 
