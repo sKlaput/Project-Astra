@@ -38,11 +38,36 @@ _Released June 2026_
 ## v0.3 — Stability & Hardware
 _Planned_
 
-- Test on real x86_64 hardware (not just QEMU)
-- APIC + multi-core (SMP) support
-- PS/2 → USB HID keyboard/mouse
-- Better memory protection (per-process page tables, proper ring-3 isolation)
-- Improved scheduler (priority inheritance, better preemption)
+### 1. Better Memory Protection _(highest priority)_
+Foundation for the entire future software ecosystem.
+- Per-process page tables
+- Real ring-3 isolation — user processes cannot corrupt kernel memory
+- Guard pages, kernel/user address space split
+
+### 2. APIC + SMP
+Use modern CPUs properly.
+- Local APIC timer replaces PIT
+- Multi-core bring-up (AP startup, per-core stacks)
+- Enables background tasks and better responsiveness
+
+### 3. Improved Scheduler
+Depends on SMP being in place.
+- Better preemption and timeslicing
+- Priority inheritance (already partially stubbed)
+- Fair CPU distribution across cores
+
+### 4. USB HID
+Most visible user-facing improvement for real hardware.
+- XHCI host controller driver
+- USB keyboard and mouse (HID class)
+- PS/2 remains fallback for QEMU
+
+### 5. Real Hardware Testing _(start early, before everything above is done)_
+Real hardware reveals problems QEMU hides.
+- Timer and interrupt behaviour differences
+- USB / framebuffer quirks
+- Bootloader and memory-map assumptions
+- Test incrementally as each subsystem lands
 
 ---
 
