@@ -8,7 +8,7 @@
 //   CLOSED → SYN_SENT → ESTABLISHED → (FIN_WAIT_1 → FIN_WAIT_2 →) CLOSED
 //
 // One static connection at a time (sufficient for a terminal HTTP client).
-// No retransmit — relies on QEMU slirp's reliable loopback.
+// Minimal retransmit for SYN/data/FIN with timeout-based retries.
 //
 // TCP segment header (20 bytes, no options):
 //   [0..1]  src port
@@ -35,7 +35,25 @@ pub const TCP_HDR: usize = 20;
 const FIN: u8 = 0x01;
 const SYN: u8 = 0x02;
 const RST: u8 = 0x04;
+const PSH: u8 = 0x08;
 const ACK: u8 = 0x10;
+
+// ── Sequence number helpers (handle wrapping per RFC 793) ─────────────────────
+/// True if `a` is strictly ahead of `b` in TCP sequence space.
+#[inline]
+fn seq_gt(a: u32, b: u32) -> bool {
+    a != b && a.wrapping_sub(b) < 0x8000_0000u32
+}
+/// True if `a` >= `b` in TCP sequence space.
+#[inline]
+fn seq_ge(a: u32, b: u32) -> bool {
+    a.wrapping_sub(b) < 0x8000_0000u32
+}
+const SYN_RETRY_MS: u64 = 300;
+const DATA_ACK_TIMEOUT_MS: u64 = 3000;
+const FIN_ACK_TIMEOUT_MS: u64 = 500;
+const DATA_RETRIES: usize = 3;
+const FIN_RETRIES: usize = 3;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -60,6 +78,7 @@ pub struct TcpConn {
     pub dst_port: u16,
     // Send sequence state
     snd_seq:  u32,   // next byte to send
+    snd_una:  u32,   // highest acknowledged sequence (next expected by peer)
     // Receive sequence state
     rcv_seq:  u32,   // next expected byte from remote
     // Receive buffer
@@ -78,6 +97,7 @@ impl TcpConn {
             src_port: 0,
             dst_port: 0,
             snd_seq:  0,
+            snd_una:  0,
             rcv_seq:  0,
             rx_buf:   [0; RX_CAP],
             rx_len:   0,
@@ -108,7 +128,7 @@ fn tcp_checksum(src_ip: [u8;4], dst_ip: [u8;4], tcp_seg: &[u8]) -> u16 {
     sum += tcp_len as u32;
     // TCP segment itself
     let mut i = 0usize;
-    while i + 1 <= tcp_seg.len() {
+    while i + 2 <= tcp_seg.len() {
         sum += u16::from_be_bytes([tcp_seg[i], tcp_seg[i+1]]) as u32;
         i += 2;
     }
@@ -145,7 +165,7 @@ fn build_segment(conn: &TcpConn, flags: u8, payload: &[u8], out: &mut [u8]) -> u
     tcp[11] =  ack        as u8;
     tcp[12] = 0x50;   // data offset = 5 (20 bytes), reserved = 0
     tcp[13] = flags;
-    tcp[14] = 0x08;   // window size high byte (0x0800 = 2048 — small but enough)
+    tcp[14] = 0x20;   // window size high byte (0x2000 = 8192, matching RX_CAP)
     tcp[15] = 0x00;
     tcp[16] = 0; tcp[17] = 0;  // checksum placeholder
     tcp[18] = 0; tcp[19] = 0;  // urgent pointer
@@ -189,7 +209,7 @@ fn send_segment(conn: &TcpConn, flags: u8, payload: &[u8]) -> bool {
 pub fn connect(dst_ip: [u8; 4], dst_port: u16, timeout_ms: u64) -> bool {
     let Some(cfg) = config::get() else { return false; };
 
-    // Resolve destination MAC.
+    // Resolve destination MAC first (before touching CONN state).
     // For off-subnet IPs (or when direct ARP fails) use the gateway MAC —
     // slirp routes all external traffic through 10.0.2.2 anyway.
     let dst_mac = {
@@ -198,24 +218,23 @@ pub fn connect(dst_ip: [u8; 4], dst_port: u16, timeout_ms: u64) -> bool {
         } else {
             match config::gateway_ip() { Some(gw) => gw, None => return false }
         };
-        let cached = arp::cache_lookup(arp_target);
-        if let Some(m) = cached {
-            m
-        } else {
-            arp::send_request(arp_target);
-            let dl = uptime_ms() + 1500;
-            let mut found = None;
-            while uptime_ms() < dl {
-                crate::net::poll_and_dispatch();
-                if let Some(m) = arp::cache_lookup(arp_target) { found = Some(m); break; }
-                crate::arch::x86_64::halt::idle_once();
-            }
-            match found { Some(m) => m, None => return false }
+        match arp::resolve_with_retry(arp_target, 1500, 3) {
+            Some(m) => m,
+            None => return false,
         }
     };
 
     let src_port = (NEXT_PORT.fetch_add(1, Ordering::Relaxed) & 0xFFFF) as u16;
 
+    // Per-connection ISN derived from uptime so back-to-back connections do not
+    // reuse the same sequence space (which can confuse stateful NAT / the peer
+    // while a previous connection is still in TIME_WAIT).
+    let isn = 0x1000_0000u32
+        .wrapping_add((uptime_ms() as u32).wrapping_mul(65_536))
+        .wrapping_add((src_port as u32) << 8);
+
+    // Full clean-slate reset immediately before setting up the new connection.
+    // Done here (after ARP) so no polling occurs between the reset and SYN send.
     {
         let mut conn = CONN.lock();
         conn.state    = TcpState::SynSent;
@@ -224,7 +243,8 @@ pub fn connect(dst_ip: [u8; 4], dst_port: u16, timeout_ms: u64) -> bool {
         conn.dst_mac  = dst_mac;
         conn.src_port = src_port;
         conn.dst_port = dst_port;
-        conn.snd_seq  = 0x12345678;   // ISN (fixed for simplicity)
+        conn.snd_seq  = isn;
+        conn.snd_una  = conn.snd_seq;
         conn.rcv_seq  = 0;
         conn.rx_len   = 0;
         conn.rx_fin   = false;
@@ -236,13 +256,41 @@ pub fn connect(dst_ip: [u8; 4], dst_port: u16, timeout_ms: u64) -> bool {
         send_segment(&conn, SYN, &[]);
     }
 
-    // Wait for ESTABLISHED
-    let deadline = uptime_ms() + timeout_ms;
+    // Wait for ESTABLISHED; retransmit SYN periodically until timeout.
+    let deadline = uptime_ms().saturating_add(timeout_ms);
+    let mut next_syn_retry = uptime_ms().saturating_add(SYN_RETRY_MS);
     while uptime_ms() < deadline {
+        let now = uptime_ms();
+        if now >= next_syn_retry {
+            let conn = CONN.lock();
+            if conn.state == TcpState::SynSent {
+                send_segment(&conn, SYN, &[]);
+            }
+            next_syn_retry = now.saturating_add(SYN_RETRY_MS);
+        }
+
         crate::net::poll_and_dispatch();
         let state = CONN.lock().state;
         if state == TcpState::Established { return true; }
         if state == TcpState::Closed { return false; }
+        crate::arch::x86_64::halt::idle_once();
+    }
+    CONN.lock().state = TcpState::Closed;
+    false
+}
+
+fn wait_for_ack(expected_ack: u32, timeout_ms: u64) -> bool {
+    let deadline = uptime_ms().saturating_add(timeout_ms);
+    while uptime_ms() < deadline {
+        crate::net::poll_and_dispatch();
+        let conn = CONN.lock();
+        // Check the ACK first: the peer may bundle ACK + data + FIN (HTTP/1.0
+        // "Connection: close"), driving us to CloseWait/Closed in the same poll
+        // batch where our data was acknowledged.  A reached ACK is success even
+        // if the connection is now closing.
+        if seq_ge(conn.snd_una, expected_ack) { return true; }
+        if conn.state == TcpState::Closed { return false; }
+        drop(conn);
         crate::arch::x86_64::halt::idle_once();
     }
     false
@@ -250,21 +298,42 @@ pub fn connect(dst_ip: [u8; 4], dst_port: u16, timeout_ms: u64) -> bool {
 
 /// Send data on the established connection.
 pub fn send(data: &[u8]) -> bool {
-    let conn = CONN.lock();
-    if conn.state != TcpState::Established { return false; }
-    // Send in 1460-byte chunks
+    {
+        let s = CONN.lock().state;
+        if s != TcpState::Established && s != TcpState::CloseWait { return false; }
+    }
+    // Send in 1460-byte chunks and wait for ACK for each chunk.
     let mut off = 0usize;
     while off < data.len() {
         let chunk_end = (off + 1460).min(data.len());
-        if !send_segment(&conn, ACK | if chunk_end == data.len() { 0 } else { 0 },
-                          &data[off..chunk_end]) {
+        let chunk = &data[off..chunk_end];
+        let mut acked = false;
+
+        for _ in 0..DATA_RETRIES {
+            let expected_ack = {
+                let conn = CONN.lock();
+                let s = conn.state;
+                if s != TcpState::Established && s != TcpState::CloseWait { return false; }
+                if !send_segment(&conn, ACK | PSH, chunk) { return false; }
+                conn.snd_seq.wrapping_add(chunk.len() as u32)
+            };
+
+            if wait_for_ack(expected_ack, DATA_ACK_TIMEOUT_MS) {
+                let mut conn = CONN.lock();
+                conn.snd_seq = expected_ack;
+                if !seq_ge(conn.snd_una, expected_ack) {
+                    conn.snd_una = expected_ack;
+                }
+                acked = true;
+                break;
+            }
+        }
+
+        if !acked {
             return false;
         }
         off = chunk_end;
     }
-    // Advance snd_seq (we do this after sending for simplicity — no retransmit)
-    drop(conn);
-    CONN.lock().snd_seq = CONN.lock().snd_seq.wrapping_add(data.len() as u32);
     true
 }
 
@@ -297,12 +366,41 @@ pub fn state() -> TcpState {
 
 /// Close the connection by sending FIN.
 pub fn close() {
-    let conn = CONN.lock();
-    if conn.state == TcpState::Established || conn.state == TcpState::CloseWait {
-        send_segment(&conn, FIN | ACK, &[]);
+    {
+        let mut conn = CONN.lock();
+        if conn.state != TcpState::Established && conn.state != TcpState::CloseWait {
+            conn.state = TcpState::Closed;
+            return;
+        }
+        conn.state = TcpState::FinWait1;
     }
-    drop(conn);
-    CONN.lock().state = TcpState::Closed;
+
+    for _ in 0..FIN_RETRIES {
+        let fin_ack_target = {
+            let conn = CONN.lock();
+            if !send_segment(&conn, FIN | ACK, &[]) {
+                break;
+            }
+            conn.snd_seq.wrapping_add(1)
+        };
+
+        if wait_for_ack(fin_ack_target, FIN_ACK_TIMEOUT_MS) {
+            let mut conn = CONN.lock();
+            conn.snd_seq = fin_ack_target;
+            if !seq_ge(conn.snd_una, fin_ack_target) {
+                conn.snd_una = fin_ack_target;
+            }
+            conn.state  = TcpState::Closed;
+            conn.rx_fin = false;
+            conn.rx_len = 0;
+            return;
+        }
+    }
+
+    let mut conn = CONN.lock();
+    conn.state  = TcpState::Closed;
+    conn.rx_fin = false;
+    conn.rx_len = 0;
 }
 
 // ── RX handler (called by net::dispatch_frame) ────────────────────────────────
@@ -338,7 +436,8 @@ pub fn handle_segment(src_ip: [u8; 4], payload: &[u8]) {
             if flags & (SYN | ACK) == (SYN | ACK) {
                 conn.rcv_seq = seq.wrapping_add(1);  // next expected = remote ISN + 1
                 conn.snd_seq = conn.snd_seq.wrapping_add(1); // SYN consumed one seq
-                let _ = ack_num; // we trust the remote
+                conn.snd_una = conn.snd_seq;
+                let _ = ack_num;
                 conn.state = TcpState::Established;
                 // Send ACK (must drop lock first to avoid deadlock in send)
                 let ack_seg_seq = conn.snd_seq;
@@ -354,6 +453,10 @@ pub fn handle_segment(src_ip: [u8; 4], payload: &[u8]) {
             }
         }
         TcpState::Established | TcpState::CloseWait => {
+            if flags & ACK != 0 && seq_gt(ack_num, conn.snd_una) {
+                conn.snd_una = ack_num;
+            }
+
             // Receive data
             if !tcp_data.is_empty() {
                 let space = RX_CAP - conn.rx_len;
@@ -392,8 +495,11 @@ pub fn handle_segment(src_ip: [u8; 4], payload: &[u8]) {
             }
         }
         TcpState::FinWait1 => {
+            if flags & ACK != 0 && seq_gt(ack_num, conn.snd_una) {
+                conn.snd_una = ack_num;
+            }
             if flags & ACK != 0 {
-                CONN.lock().state = TcpState::TimeWait;
+                conn.state = TcpState::TimeWait;
             }
         }
         _ => {}
@@ -415,7 +521,7 @@ fn send_ack_raw(src_ip: [u8;4], dst_ip: [u8;4], dst_mac: [u8;6],
     tcp[10]= (rcv_seq >>  8) as u8; tcp[11]=  rcv_seq        as u8;
     tcp[12] = 0x50;
     tcp[13] = ACK;
-    tcp[14] = 0x08; tcp[15] = 0x00;
+    tcp[14] = 0x20; tcp[15] = 0x00;  // window = 8192
     tcp[16] = 0; tcp[17] = 0;
     tcp[18] = 0; tcp[19] = 0;
     let csum = tcp_checksum(src_ip, dst_ip, &frame[ETH_HDR + IPV4_HDR..]);

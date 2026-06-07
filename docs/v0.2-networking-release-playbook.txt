@@ -73,6 +73,11 @@ Suggested Test Loop Per Candidate
 - Run: http http://example.com/
 - Repeat 3 times per boot, then repeat across 3 boots
 
+Fast Validation Shortcut
+- Run: netcheck 3
+   - Executes gateway ping + DNS + HTTP checks three times
+   - Prints per-run pass/fail and summary counters
+
 Versioning Rules
 - Keep this file updated when scope changes
 - For each milestone completion, add:
@@ -82,3 +87,46 @@ Versioning Rules
 
 Milestone Log
 - 2026-06-01: Playbook created at baseline b077df0.
+- 2026-06-01: Local (uncommitted) ARP hardening in progress.
+   - Added ARP cache TTL freshness filtering.
+   - Added shared ARP resolve_with_retry(timeout,retries) helper.
+   - Switched DNS, TCP connect, and terminal ping to use shared ARP resolver.
+- 2026-06-01: Local (uncommitted) TCP reliability hardening in progress.
+   - Added SYN retransmit pacing during connect.
+   - Added ACK-tracked retry/timeout for TCP data send.
+   - Added ACK-tracked retry/timeout for TCP FIN close path.
+- 2026-06-01: Local (uncommitted) terminal validation tooling added.
+   - Added `netcheck [n]` command to run ping + DNS + HTTP checks in loops.
+   - Added per-run pass/fail output and summary counters for quick gate checks.
+- 2026-06-01: Local (uncommitted) HTTP diagnostics improvement.
+   - `http::get` now returns ResponseTimeout when no bytes arrive before deadline.
+- 2026-06-01: Local (uncommitted) DNS reliability hardening.
+   - Added retry loop with per-attempt timeout slicing.
+   - DNS query send now re-resolves ARP once when TX submit fails.
+- 2026-06-01: Local (uncommitted) ICMP reliability hardening.
+   - Generic ICMP echo-send now performs ARP retry resolution before fallback broadcast.
+- 2026-06-04: Local (uncommitted) TCP correctness hardening.
+   - Added PSH flag to all TCP data sends (ensures peer delivers request immediately).
+   - Increased advertised receive window from 2048 to 8192 bytes (matches RX_CAP).
+   - Added seq_gt/seq_ge helpers; replaced all bare `>` / `>=` sequence comparisons
+     with wrapping-safe equivalents in wait_for_ack, handle_segment, send, and close.
+- 2026-06-04: Local (uncommitted) DNS error diagnostics.
+   - dns::resolve now returns Result<[u8;4], DnsError> instead of Option.
+   - DnsError distinguishes: NotReady, ArpFailed, SendFailed, Timeout, NxDomain, RcodeError(u8).
+   - parse_response now extracts RCODE and returns RcodeError(2) for SERVFAIL, etc.
+   - cmd_dns terminal command now prints specific failure reason.
+   - http::get and netcheck updated to handle new Result type.
+- 2026-06-07: **ROOT CAUSE FOUND AND FIXED** — virtio-net header size was 12 instead of 10.
+   - VirtioNetHdr::SIZE was 12; correct legacy size (no VIRTIO_NET_F_MRG_RXBUF) is 10.
+   - TX: QEMU was prepending 2 garbage bytes to every outgoing Ethernet frame.
+   - RX: We were skipping 2 bytes into the Ethernet header, dropping all inbound frames.
+   - Fix: removed num_buffers field from VirtioNetHdr, set SIZE = 10.
+   - Result: DNS resolves google.com -> 172.217.19.238; ping 10.0.2.2 passes 4/4 at 10ms RTT.
+   - Gate 1 (ping): PASS. Gate 2 (dns): PASS.
+- 2026-06-07: Local (uncommitted) TCP + HTTP fixes.
+   - Fixed checksum loop off-by-one (i+1 <= len → i+2 <= len) — caused kernel panic on odd-length segments.
+   - Fixed UDP RX buffer 128 → 512 bytes — DNS responses for CDN hostnames were truncated.
+   - Fixed DNS payload buffer 256 → 512 bytes to match.
+   - HTTP response loop now spin-polls 16x before hlt to catch back-to-back TCP segments without 10ms delay.
+   - http google.com: 301 redirect, 773 bytes. http facebook.com: RST on port 80 (expected, non-browser client).
+   - Gate 3 (http): PASS. Gate 4 (no desktop regressions): PASS (observed in testing).

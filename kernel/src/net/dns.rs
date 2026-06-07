@@ -16,8 +16,9 @@ use crate::arch::x86_64::interrupts::uptime_ms;
 
 const DNS_PORT: u16 = 53;
 const DNS_SERVER: [u8; 4] = [10, 0, 2, 3]; // QEMU slirp DNS
+const DNS_RETRIES: usize = 2;
 
-const MAX_DNS_PAYLOAD: usize = 256;
+const MAX_DNS_PAYLOAD: usize = 512;
 
 // ── Query builder ─────────────────────────────────────────────────────────────
 
@@ -76,14 +77,15 @@ fn skip_name(data: &[u8], mut off: usize) -> Option<usize> {
     }
 }
 
-/// Parse a DNS A-record response.  Returns the first IPv4 address found, or None.
-pub fn parse_response(data: &[u8], txid: u16) -> Option<[u8; 4]> {
-    if data.len() < 12 { return None; }
+/// Parse a DNS A-record response.  Returns the first IPv4 address or a DnsError.
+fn parse_response(data: &[u8], txid: u16) -> Result<[u8; 4], DnsError> {
+    if data.len() < 12 { return Err(DnsError::Timeout); }
     let resp_txid = u16::from_be_bytes([data[0], data[1]]);
-    if resp_txid != txid { return None; }
+    if resp_txid != txid { return Err(DnsError::Timeout); }
     let flags = u16::from_be_bytes([data[2], data[3]]);
-    if flags & 0x8000 == 0 { return None; } // not a response
-    if flags & 0x000F != 0 { return None; } // RCODE != 0 (error)
+    if flags & 0x8000 == 0 { return Err(DnsError::Timeout); } // not a response
+    let rcode = (flags & 0x000F) as u8;
+    if rcode != 0 { return Err(DnsError::RcodeError(rcode)); }
 
     let qdcount = u16::from_be_bytes([data[4], data[5]]) as usize;
     let ancount = u16::from_be_bytes([data[6], data[7]]) as usize;
@@ -91,93 +93,99 @@ pub fn parse_response(data: &[u8], txid: u16) -> Option<[u8; 4]> {
     let mut off = 12usize;
     // Skip questions
     for _ in 0..qdcount {
-        off = skip_name(data, off)?;
+        off = skip_name(data, off).ok_or(DnsError::Timeout)?;
         off += 4; // type + class
-        if off > data.len() { return None; }
+        if off > data.len() { return Err(DnsError::Timeout); }
     }
     // Parse answers looking for A records
     for _ in 0..ancount {
-        off = skip_name(data, off)?;
-        if off + 10 > data.len() { return None; }
+        off = skip_name(data, off).ok_or(DnsError::Timeout)?;
+        if off + 10 > data.len() { return Err(DnsError::Timeout); }
         let rtype  = u16::from_be_bytes([data[off], data[off+1]]);
         let rdlen  = u16::from_be_bytes([data[off+8], data[off+9]]) as usize;
         off += 10;
-        if off + rdlen > data.len() { return None; }
+        if off + rdlen > data.len() { return Err(DnsError::Timeout); }
         if rtype == 1 && rdlen == 4 {
-            // A record
-            let ip: [u8; 4] = data[off..off+4].try_into().ok()?;
-            return Some(ip);
+            let ip: [u8; 4] = data[off..off+4].try_into().map_err(|_| DnsError::Timeout)?;
+            return Ok(ip);
         }
         off += rdlen;
     }
-    None
+    Err(DnsError::NxDomain)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-pub struct DnsResult {
-    pub name: &'static str,  // only used internally
-    pub ip:   [u8; 4],
+/// Reason a DNS query failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DnsError {
+    /// IP stack not configured.
+    NotReady,
+    /// Could not resolve gateway / DNS-server MAC via ARP.
+    ArpFailed,
+    /// UDP send to DNS server failed after ARP refresh.
+    SendFailed,
+    /// No response arrived within the timeout.
+    Timeout,
+    /// Name does not exist (RCODE=3 NXDOMAIN).
+    NxDomain,
+    /// DNS server returned an error (RCODE value in the u8).
+    RcodeError(u8),
 }
 
-/// Resolve `name` to an IPv4 address by querying QEMU's slirp DNS at 10.0.2.3.
-/// Blocks for up to `timeout_ms` milliseconds.  Returns None on failure.
-pub fn resolve(name: &str, timeout_ms: u64) -> Option<[u8; 4]> {
+/// Resolve `name` to an IPv4 address, returning a detailed error on failure.
+/// Blocks for up to `timeout_ms` milliseconds.
+pub fn resolve(name: &str, timeout_ms: u64) -> Result<[u8; 4], DnsError> {
     // Need IP config
-    config::get()?;
+    config::get().ok_or(DnsError::NotReady)?;
 
-    // Resolve DNS server MAC via ARP (try up to 1s)
-    // QEMU slirp: 10.0.2.3 (DNS) and 10.0.2.2 (gateway) are both served by the
-    // same slirp process and share a MAC.  ARP for .3 often goes unanswered while
-    // ARP for .2 always works.  Resolve the gateway MAC and use it for DNS too.
-    let gw: [u8; 4] = config::gateway_ip()?;
-    let dns_mac = {
-        let m = arp::cache_lookup(gw)
-            .or_else(|| arp::cache_lookup(DNS_SERVER));
-        if let Some(mac) = m {
-            mac
-        } else {
-            // Try gateway first, then DNS server directly
-            arp::send_request(gw);
-            let deadline = uptime_ms() + 1500;
-            let mut found = None;
-            while uptime_ms() < deadline {
-                crate::net::poll_and_dispatch();
-                if let Some(m) = arp::cache_lookup(gw)
-                    .or_else(|| arp::cache_lookup(DNS_SERVER))
-                {
-                    found = Some(m);
-                    break;
-                }
-                crate::arch::x86_64::halt::idle_once();
-            }
-            found?
-        }
-    };
+    // Resolve DNS server MAC via ARP.
+    // QEMU slirp: 10.0.2.3 (DNS) and 10.0.2.2 (gateway) share a MAC.
+    // ARP for .3 often goes unanswered; resolve gateway MAC and use it for DNS.
+    let gw: [u8; 4] = config::gateway_ip().ok_or(DnsError::NotReady)?;
+    let mut dns_mac = arp::resolve_with_retry(gw, 1200, 3)
+        .or_else(|| arp::resolve_with_retry(DNS_SERVER, 900, 2))
+        .ok_or(DnsError::ArpFailed)?;
 
     static TXID: core::sync::atomic::AtomicU16 = core::sync::atomic::AtomicU16::new(0x1234);
-    let txid = TXID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     let src_port = udp::alloc_port();
 
-    let mut buf = [0u8; MAX_DNS_PAYLOAD];
-    let qlen = build_query(name, txid, &mut buf);
-    if qlen == 0 { return None; }
+    let attempts = DNS_RETRIES.max(1);
+    let per_attempt_ms = (timeout_ms / attempts as u64).max(350);
 
-    // Send the query
-    if !udp::send(DNS_SERVER, dns_mac, src_port, DNS_PORT, &buf[..qlen]) {
-        return None;
-    }
+    let mut last_err = DnsError::Timeout;
 
-    // Wait for response
-    let deadline = uptime_ms() + timeout_ms;
-    while uptime_ms() < deadline {
-        crate::net::poll_and_dispatch();
-        if let Some(pkt) = udp::recv(src_port) {
-            if let Some(ip) = parse_response(&pkt.data[..pkt.len], txid) {
-                return Some(ip);
+    for _ in 0..attempts {
+        let txid = TXID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+        let mut buf = [0u8; MAX_DNS_PAYLOAD];
+        let qlen = build_query(name, txid, &mut buf);
+        if qlen == 0 { return Err(DnsError::NotReady); }
+
+        // Submit query; refresh ARP once if the send fails.
+        if !udp::send(DNS_SERVER, dns_mac, src_port, DNS_PORT, &buf[..qlen]) {
+            dns_mac = arp::resolve_with_retry(gw, 1200, 3)
+                .or_else(|| arp::resolve_with_retry(DNS_SERVER, 900, 2))
+                .ok_or(DnsError::ArpFailed)?;
+            if !udp::send(DNS_SERVER, dns_mac, src_port, DNS_PORT, &buf[..qlen]) {
+                last_err = DnsError::SendFailed;
+                continue;
             }
         }
-        crate::arch::x86_64::halt::idle_once();
+
+        let deadline = uptime_ms().saturating_add(per_attempt_ms);
+        while uptime_ms() < deadline {
+            crate::net::poll_and_dispatch();
+            if let Some(pkt) = udp::recv(src_port) {
+                match parse_response(&pkt.data[..pkt.len], txid) {
+                    Ok(ip) => return Ok(ip),
+                    Err(DnsError::Timeout) => {} // wrong TXID or malformed, keep waiting
+                    Err(e) => return Err(e),     // NXDOMAIN or RCODE error: definitive
+                }
+            }
+            crate::arch::x86_64::halt::idle_once();
+        }
     }
-    None
+
+    Err(last_err)
 }

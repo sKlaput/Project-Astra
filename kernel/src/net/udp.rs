@@ -22,7 +22,7 @@ pub const UDP_HDR: usize = 8;
 
 // ── Receive queue ─────────────────────────────────────────────────────────────
 
-const RX_BUF_CAPACITY: usize = 128;
+const RX_BUF_CAPACITY: usize = 512;  // large enough for any DNS response
 const RX_SLOT_COUNT:   usize = 4;
 
 #[derive(Clone, Copy)]

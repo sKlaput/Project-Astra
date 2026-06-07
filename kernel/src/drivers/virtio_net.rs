@@ -103,6 +103,8 @@ const VIRTIO_NET_F_STATUS:   u32 = 1 << 16; // device has link status in config
 // ── Virtio-net header (legacy, 12 bytes) ─────────────────────────────────────
 
 /// Prepended to every TX and RX frame.
+/// Without VIRTIO_NET_F_MRG_RXBUF (legacy, non-negotiated), the header is
+/// 10 bytes — the `num_buffers` field is absent.
 #[repr(C)]
 struct VirtioNetHdr {
     flags:      u8,
@@ -111,15 +113,14 @@ struct VirtioNetHdr {
     gso_size:   u16,
     csum_start: u16,
     csum_offset:u16,
-    num_buffers:u16, // only used in RX (multi-buffer); always 0 in TX
 }
 
 impl VirtioNetHdr {
     const fn tx_default() -> Self {
         VirtioNetHdr { flags: 0, gso_type: 0, hdr_len: 0, gso_size: 0,
-                       csum_start: 0, csum_offset: 0, num_buffers: 0 }
+                       csum_start: 0, csum_offset: 0 }
     }
-    const SIZE: usize = 12;
+    const SIZE: usize = 10;
 }
 
 // ── VirtQueue constants ───────────────────────────────────────────────────────

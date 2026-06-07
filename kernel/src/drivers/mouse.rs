@@ -69,27 +69,38 @@ pub struct MousePacket {
     pub buttons: u8,
     pub dx: i32,
     pub dy: i32,
+    /// Scroll wheel delta from IntelliMouse 4th byte; 0 if not available.
+    pub scroll: i8,
+}
+
+/// Whether the IntelliMouse (scroll wheel, 4-byte) protocol is active.
+static INTELLIMOUSE: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+pub fn has_scroll_wheel() -> bool {
+    INTELLIMOUSE.load(Ordering::Relaxed)
 }
 
 const PKT_BUF_SIZE: usize = 32;
-static PKT_BUF: [AtomicU8; PKT_BUF_SIZE * 3] = {
+/// 4 bytes per slot: status, dx, dy, scroll
+static PKT_BUF: [AtomicU8; PKT_BUF_SIZE * 4] = {
     const Z: AtomicU8 = AtomicU8::new(0);
-    [Z; PKT_BUF_SIZE * 3]
+    [Z; PKT_BUF_SIZE * 4]
 };
 static PKT_HEAD: AtomicUsize = AtomicUsize::new(0);
 static PKT_TAIL: AtomicUsize = AtomicUsize::new(0);
 
-fn push_packet(status: u8, dx_raw: u8, dy_raw: u8) {
+fn push_packet(status: u8, dx_raw: u8, dy_raw: u8, scroll_raw: u8) {
     let head = PKT_HEAD.load(Ordering::Relaxed);
     let next = (head + 1) % PKT_BUF_SIZE;
     if next == PKT_TAIL.load(Ordering::Acquire) {
-        // Full: drop oldest
         PKT_TAIL.store((PKT_TAIL.load(Ordering::Relaxed) + 1) % PKT_BUF_SIZE, Ordering::Release);
     }
-    let base = head * 3;
+    let base = head * 4;
     PKT_BUF[base].store(status, Ordering::Relaxed);
     PKT_BUF[base + 1].store(dx_raw, Ordering::Relaxed);
     PKT_BUF[base + 2].store(dy_raw, Ordering::Relaxed);
+    PKT_BUF[base + 3].store(scroll_raw, Ordering::Relaxed);
     PKT_HEAD.store(next, Ordering::Release);
 }
 
@@ -104,35 +115,41 @@ pub fn read_mouse_packet() -> Option<MousePacket> {
     if tail == PKT_HEAD.load(Ordering::Acquire) {
         return None;
     }
-    let base = tail * 3;
-    let status = PKT_BUF[base].load(Ordering::Relaxed);
-    let dx_raw = PKT_BUF[base + 1].load(Ordering::Relaxed);
-    let dy_raw = PKT_BUF[base + 2].load(Ordering::Relaxed);
+    let base = tail * 4;
+    let status     = PKT_BUF[base].load(Ordering::Relaxed);
+    let dx_raw     = PKT_BUF[base + 1].load(Ordering::Relaxed);
+    let dy_raw     = PKT_BUF[base + 2].load(Ordering::Relaxed);
+    let scroll_raw = PKT_BUF[base + 3].load(Ordering::Relaxed);
     PKT_TAIL.store((tail + 1) % PKT_BUF_SIZE, Ordering::Release);
 
     let buttons = status & 0x07;
     let mut dx = dx_raw as i32;
     let mut dy = dy_raw as i32;
-    if status & 0x10 != 0 { dx -= 256; } // sign-extend X
-    if status & 0x20 != 0 { dy -= 256; } // sign-extend Y
-    dy = -dy; // PS/2 Y is inverted (up=positive), screen Y is down=positive
+    if status & 0x10 != 0 { dx -= 256; }
+    if status & 0x20 != 0 { dy -= 256; }
+    dy = -dy;
+    // Scroll: 4-bit two's complement in lower nibble of 4th byte
+    let scroll = (scroll_raw as i8);
 
-    Some(MousePacket { buttons, dx, dy })
+    Some(MousePacket { buttons, dx, dy, scroll })
 }
 
 // ── Polling (called from input layer) ─────────────────────────────────────────
 
 static BYTE_IDX: AtomicU8 = AtomicU8::new(0);
-static ACCUM: [AtomicU8; 3] = [AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)];
+static ACCUM: [AtomicU8; 4] = [
+    AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)
+];
 
 /// Drain all pending aux (mouse) bytes from the PS/2 controller into packets.
 pub fn poll_aux_bytes() {
-    for _ in 0..64 {
+    // Packet size: 4 bytes in IntelliMouse mode, 3 bytes otherwise.
+    let pkt_size: u8 = if INTELLIMOUSE.load(Ordering::Relaxed) { 4 } else { 3 };
+
+    for _ in 0..128 {
         let st = inb(PS2_STATUS);
         if st & 0x01 == 0 { break; }         // no data pending
         if st & 0x20 == 0 {
-            // Keyboard byte — read it so the FIFO advances, then forward
-            // to the keyboard ring buffer so keystrokes aren't lost.
             let kb_byte = inb(PS2_DATA);
             crate::drivers::keyboard::push_scancode_from_poll(kb_byte);
             continue;
@@ -141,15 +158,15 @@ pub fn poll_aux_bytes() {
 
         let idx = BYTE_IDX.load(Ordering::Relaxed);
         if idx == 0 {
-            // First byte must have bit 3 set (always-1 bit in PS/2 status byte)
             if byte & 0x08 == 0 { continue; } // resync
         }
         ACCUM[idx as usize].store(byte, Ordering::Relaxed);
-        if idx == 2 {
+        if idx + 1 == pkt_size {
             push_packet(
                 ACCUM[0].load(Ordering::Relaxed),
                 ACCUM[1].load(Ordering::Relaxed),
                 ACCUM[2].load(Ordering::Relaxed),
+                if pkt_size == 4 { ACCUM[3].load(Ordering::Relaxed) } else { 0 },
             );
             BYTE_IDX.store(0, Ordering::Relaxed);
         } else {
@@ -187,6 +204,21 @@ impl Driver for Ps2MouseDriver {
 
         // Set defaults and enable streaming
         mouse_write(0xF6); // set defaults
+
+        // Negotiate IntelliMouse (scroll wheel) protocol by sending magic
+        // sample-rate sequence: 200, 100, 80.  If the device supports it,
+        // it switches to 4-byte packets and reports device ID 0x03.
+        mouse_write(0xF3); mouse_write(200);
+        mouse_write(0xF3); mouse_write(100);
+        mouse_write(0xF3); mouse_write(80);
+        // Read device ID to check if IntelliMouse was accepted
+        mouse_write(0xF2);
+        let dev_id = ps2_read_data();
+        if dev_id == 0x03 {
+            INTELLIMOUSE.store(true, Ordering::Relaxed);
+            crate::serial::write_line("drivers: ps2-mouse IntelliMouse scroll wheel enabled");
+        }
+
         mouse_write(0xF4); // enable data reporting
 
         // Unmask IRQ12 on the PIC so the CPU wakes from HLT on mouse events.

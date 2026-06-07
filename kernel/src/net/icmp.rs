@@ -129,7 +129,8 @@ pub fn send_echo_request_to(dst_ip: [u8; 4], dst_mac: [u8; 6], id: u16, seq: u16
 /// Send an ICMP echo request, resolving ARP from cache (or falling back to broadcast).
 /// Prefer `send_echo_request_to` when you have already resolved the MAC.
 pub fn send_echo_request(dst_ip: [u8; 4], id: u16, seq: u16) -> bool {
-    let dst_mac = arp::cache_lookup(dst_ip).unwrap_or(eth::BROADCAST_MAC);
+    let dst_mac = arp::resolve_with_retry(dst_ip, 900, 3)
+        .unwrap_or(eth::BROADCAST_MAC);
     send_echo_request_to(dst_ip, dst_mac, id, seq)
 }
 

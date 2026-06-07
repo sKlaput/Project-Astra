@@ -2493,6 +2493,15 @@ impl Desktop {
         self.update_cursor_shape();
     }
 
+    fn on_mouse_scroll(&mut self, delta: i32) {
+        if let Some(fidx) = self.focused {
+            if fidx < self.windows.len() && !self.windows[fidx].minimized {
+                let act = self.windows[fidx].app.handle_mouse_scroll(delta);
+                self.handle_app_action(fidx, act);
+            }
+        }
+    }
+
     fn on_key(&mut self, key: Key) {
         // ── Desktop name-entry prompt ─────────────────────────────────────
         if self.desk_prompt.active {
@@ -2563,6 +2572,7 @@ impl Desktop {
             }
             AppAction::RedrawInput => {
                 if win_idx < self.windows.len() {
+                    self.windows[win_idx].surface_valid = false;
                     let cr = self.windows[win_idx].client_rect();
                     if let Some(ih) = self.windows[win_idx].app.input_region_height() {
                         let iy = cr.y + cr.h.saturating_sub(ih);
@@ -2659,6 +2669,7 @@ pub fn run() -> ! {
                     if pressed & 2 != 0 { desktop.on_right_button_press(mx, my); }
                     if released & 1 != 0 { desktop.on_button_release(); }
                 }
+                Event::MouseScroll(delta) => { desktop.on_mouse_scroll(delta); }
                 Event::KeyPress(key) => { desktop.on_key(key); }
             }
         }

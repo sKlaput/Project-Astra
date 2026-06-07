@@ -21,6 +21,7 @@ use crate::net::eth::{self, BROADCAST_MAC, ETH_ARP, ETH_HDR};
 pub const ARP_PKT_LEN: usize = 28;
 const ARP_OP_REQUEST: u16 = 1;
 const ARP_OP_REPLY:   u16 = 2;
+const CACHE_TTL_MS: u64 = 30_000;
 
 // ── ARP cache ─────────────────────────────────────────────────────────────────
 
@@ -47,9 +48,15 @@ struct ArpCache {
 impl ArpCache {
     const fn new() -> Self { ArpCache { entries: [ArpEntry::empty(); CACHE_CAP] } }
 
-    fn lookup(&self, ip: [u8; 4]) -> Option<[u8; 6]> {
-        for e in &self.entries {
-            if e.is_valid() && e.ip == ip { return Some(e.mac); }
+    fn lookup_fresh(&mut self, ip: [u8; 4], now: u64) -> Option<[u8; 6]> {
+        for e in self.entries.iter_mut() {
+            if e.is_valid() && e.ip == ip {
+                if now.wrapping_sub(e.age) > CACHE_TTL_MS {
+                    *e = ArpEntry::empty();
+                    return None;
+                }
+                return Some(e.mac);
+            }
         }
         None
     }
@@ -89,7 +96,8 @@ static ARP_CACHE: Mutex<ArpCache> = Mutex::new(ArpCache::new());
 // ── Public API ────────────────────────────────────────────────────────────────
 
 pub fn cache_lookup(ip: [u8; 4]) -> Option<[u8; 6]> {
-    ARP_CACHE.lock().lookup(ip)
+    let now = crate::arch::x86_64::interrupts::uptime_ms();
+    ARP_CACHE.lock().lookup_fresh(ip, now)
 }
 
 pub fn cache_insert(ip: [u8; 4], mac: [u8; 6]) {
@@ -98,10 +106,41 @@ pub fn cache_insert(ip: [u8; 4], mac: [u8; 6]) {
 
 /// Iterate the ARP cache, calling `f` for each valid entry.
 pub fn cache_iter<F: FnMut([u8; 4], [u8; 6])>(mut f: F) {
+    let now = crate::arch::x86_64::interrupts::uptime_ms();
     let cache = ARP_CACHE.lock();
     for e in cache.all() {
-        if e.is_valid() { f(e.ip, e.mac); }
+        if e.is_valid() && now.wrapping_sub(e.age) <= CACHE_TTL_MS {
+            f(e.ip, e.mac);
+        }
     }
+}
+
+/// Resolve `target_ip` to a MAC address with ARP retries.
+///
+/// Attempts up to `retries` ARP requests and waits a slice of `timeout_ms`
+/// between attempts while polling RX. Returns None on timeout.
+pub fn resolve_with_retry(target_ip: [u8; 4], timeout_ms: u64, retries: usize) -> Option<[u8; 6]> {
+    if let Some(mac) = cache_lookup(target_ip) {
+        return Some(mac);
+    }
+    if retries == 0 {
+        return None;
+    }
+
+    let attempts = retries.max(1);
+    let slice_ms = (timeout_ms / attempts as u64).max(1);
+    for _ in 0..attempts {
+        send_request(target_ip);
+        let deadline = crate::arch::x86_64::interrupts::uptime_ms().saturating_add(slice_ms);
+        while crate::arch::x86_64::interrupts::uptime_ms() < deadline {
+            crate::net::poll_and_dispatch();
+            if let Some(mac) = cache_lookup(target_ip) {
+                return Some(mac);
+            }
+            crate::arch::x86_64::halt::idle_once();
+        }
+    }
+    cache_lookup(target_ip)
 }
 
 /// Handle an incoming ARP packet (Ethernet payload, 28 bytes).

@@ -56,12 +56,15 @@ struct TermState {
     hist_cnt:   usize,
     input:      [u8; LINE_BUF],
     input_len:  usize,
+    cursor_pos: usize,   // byte offset within input where next char is inserted
     inited:     bool,
     // command history
     cmd_hist:   [[u8; LINE_BUF]; CMD_HIST],
     cmd_hlen:   [usize; CMD_HIST],
     cmd_hcount: usize,           // total commands entered
     cmd_hpos:   usize,           // browse position (0 = latest)
+    // scroll: 0 = pinned to bottom (most recent), N = scrolled back N rows
+    scroll_off: usize,
     // current working directory (FAT32 cluster + display path)
     cwd_cluster: u32,            // 0 = use FAT32 root when mounted
     cwd_path:    [u8; PATH_BUF],
@@ -75,11 +78,13 @@ impl TermState {
             hist_cnt:   0,
             input:      [0u8; LINE_BUF],
             input_len:  0,
+            cursor_pos: 0,
             inited:     false,
             cmd_hist:   [[0u8; LINE_BUF]; CMD_HIST],
             cmd_hlen:   [0usize; CMD_HIST],
             cmd_hcount: 0,
             cmd_hpos:   0,
+            scroll_off: 0,
             cwd_cluster: 0,
             cwd_path:   [0u8; PATH_BUF],
             cwd_plen:   0,
@@ -103,6 +108,8 @@ impl TermState {
         ln.len = n;
         ln.col = col;
         self.hist_cnt += 1;
+        // Auto-scroll to bottom when new content arrives
+        self.scroll_off = 0;
     }
 
     /// Push a command into the ring history and reset browse position.
@@ -134,6 +141,8 @@ impl TermState {
             self.input[..n].copy_from_slice(&self.cmd_hist[idx][..n]);
             self.input_len = n;
         }
+        // always put cursor at end after history navigation
+        self.cursor_pos = self.input_len;
         true
     }
 
@@ -190,9 +199,22 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
     let history_y = cy + 6;
     let avail_h = input_y.saturating_sub(history_y + 6);
     let vis_rows = avail_h / CHAR_H;
-    let start_idx = t.hist_cnt.saturating_sub(vis_rows);
 
-    for (row, idx) in (start_idx..t.hist_cnt).enumerate() {
+    // Clear history area background so stale lines don't bleed through on scroll
+    framebuffer::fill_rect(cx, history_y, cw, avail_h, BG);
+
+    // Clamp scroll so we can't scroll past the top of history
+    let max_scroll = t.hist_cnt.saturating_sub(vis_rows);
+    let scroll = t.scroll_off.min(max_scroll);
+    let start_idx = t.hist_cnt.saturating_sub(vis_rows + scroll);
+    let end_idx = t.hist_cnt.saturating_sub(scroll);
+
+    // Show scroll indicator when not at the bottom
+    if scroll > 0 {
+        framebuffer::draw_text_scaled(inner_x, history_y, "^ PgUp/PgDn to scroll ^", 0x444466, SCALE);
+    }
+
+    for (row, idx) in (start_idx..end_idx).enumerate() {
         let ln = &t.hist[idx];
         if ln.len > 0 {
             let n = ln.len.min(max_cols);
@@ -208,19 +230,22 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
     let prompt_cols = PROMPT.len().min(max_cols);
     framebuffer::draw_text_scaled(inner_x, input_y, &PROMPT[..prompt_cols], PROMPT_COL, SCALE);
 
-    // User input
+    // User input — scroll window keeps cursor visible
     let text_x = inner_x + prompt_cols * CHAR_W;
     let input_cols = max_cols.saturating_sub(prompt_cols);
     if t.input_len > 0 && input_cols > 0 {
-        let shown = t.input_len.min(input_cols);
-        let start = t.input_len.saturating_sub(shown);
-        let s = unsafe { core::str::from_utf8_unchecked(&t.input[start..t.input_len]) };
-        framebuffer::draw_text_scaled(text_x, input_y, s, INPUT_COL, SCALE);
+        let scroll_start = if t.cursor_pos >= input_cols { t.cursor_pos + 1 - input_cols } else { 0 };
+        let shown_end = (scroll_start + input_cols).min(t.input_len);
+        if shown_end > scroll_start {
+            let s = unsafe { core::str::from_utf8_unchecked(&t.input[scroll_start..shown_end]) };
+            framebuffer::draw_text_scaled(text_x, input_y, s, INPUT_COL, SCALE);
+        }
     }
 
-    // Block cursor
-    let visible_input = t.input_len.min(input_cols);
-    let cur_x = text_x + visible_input * CHAR_W;
+    // Block cursor at cursor_pos
+    let input_cols_c = max_cols.saturating_sub(prompt_cols);
+    let scroll_c = if t.cursor_pos >= input_cols_c { t.cursor_pos + 1 - input_cols_c } else { 0 };
+    let cur_x = text_x + (t.cursor_pos - scroll_c) * CHAR_W;
     framebuffer::fill_rect(cur_x, input_y, CHAR_W - 2, CHAR_H, CURSOR_COL);
 }
 
@@ -242,19 +267,22 @@ pub fn render_input_line(cx: usize, cy: usize, cw: usize, ch: usize) {
     let prompt_cols = PROMPT.len().min(max_cols);
     framebuffer::draw_text_scaled(inner_x, input_y, &PROMPT[..prompt_cols], PROMPT_COL, SCALE);
 
-    // User input
+    // User input — scroll window keeps cursor visible
     let text_x = inner_x + prompt_cols * CHAR_W;
     let input_cols = max_cols.saturating_sub(prompt_cols);
     if t.input_len > 0 && input_cols > 0 {
-        let shown = t.input_len.min(input_cols);
-        let start = t.input_len.saturating_sub(shown);
-        let s = unsafe { core::str::from_utf8_unchecked(&t.input[start..t.input_len]) };
-        framebuffer::draw_text_scaled(text_x, input_y, s, INPUT_COL, SCALE);
+        let scroll_start = if t.cursor_pos >= input_cols { t.cursor_pos + 1 - input_cols } else { 0 };
+        let shown_end = (scroll_start + input_cols).min(t.input_len);
+        if shown_end > scroll_start {
+            let s = unsafe { core::str::from_utf8_unchecked(&t.input[scroll_start..shown_end]) };
+            framebuffer::draw_text_scaled(text_x, input_y, s, INPUT_COL, SCALE);
+        }
     }
 
-    // Block cursor
-    let visible_input = t.input_len.min(input_cols);
-    let cur_x = text_x + visible_input * CHAR_W;
+    // Block cursor at cursor_pos
+    let input_cols_c = max_cols.saturating_sub(prompt_cols);
+    let scroll_c = if t.cursor_pos >= input_cols_c { t.cursor_pos + 1 - input_cols_c } else { 0 };
+    let cur_x = text_x + (t.cursor_pos - scroll_c) * CHAR_W;
     framebuffer::fill_rect(cur_x, input_y, CHAR_W - 2, CHAR_H, CURSOR_COL);
 }
 
@@ -265,10 +293,69 @@ pub fn handle_key(key: Key) -> TermAction {
 
         Key::Backspace => {
             let mut t = TERM.lock();
-            if t.input_len > 0 {
-                t.input_len -= 1;
-                let idx = t.input_len;
-                t.input[idx] = 0;
+            if t.cursor_pos > 0 {
+                let pos = t.cursor_pos - 1;
+                let len = t.input_len;
+                t.input.copy_within(pos + 1..len, pos);
+                let new_len = len - 1;
+                t.input[new_len] = 0;
+                t.input_len = new_len;
+                t.cursor_pos = pos;
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
+        }
+
+        Key::Delete => {
+            let mut t = TERM.lock();
+            let pos = t.cursor_pos;
+            let len = t.input_len;
+            if pos < len {
+                t.input.copy_within(pos + 1..len, pos);
+                let new_len = len - 1;
+                t.input[new_len] = 0;
+                t.input_len = new_len;
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
+        }
+
+        Key::ArrowLeft => {
+            let mut t = TERM.lock();
+            if t.cursor_pos > 0 {
+                t.cursor_pos -= 1;
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
+        }
+
+        Key::ArrowRight => {
+            let mut t = TERM.lock();
+            if t.cursor_pos < t.input_len {
+                t.cursor_pos += 1;
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
+        }
+
+        Key::Home => {
+            let mut t = TERM.lock();
+            if t.cursor_pos != 0 {
+                t.cursor_pos = 0;
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
+        }
+
+        Key::End => {
+            let mut t = TERM.lock();
+            if t.cursor_pos != t.input_len {
+                t.cursor_pos = t.input_len;
                 TermAction::RedrawInput
             } else {
                 TermAction::Nothing
@@ -285,6 +372,18 @@ pub fn handle_key(key: Key) -> TermAction {
             if changed { TermAction::RedrawInput } else { TermAction::Nothing }
         }
 
+        Key::PageUp => {
+            let mut t = TERM.lock();
+            t.scroll_off = t.scroll_off.saturating_add(8);
+            TermAction::RedrawAll
+        }
+
+        Key::PageDown => {
+            let mut t = TERM.lock();
+            t.scroll_off = t.scroll_off.saturating_sub(8);
+            TermAction::RedrawAll
+        }
+
         Key::Enter => {
             execute_input();
             TermAction::RedrawAll
@@ -293,10 +392,13 @@ pub fn handle_key(key: Key) -> TermAction {
         Key::Char(c) => {
             let mut t = TERM.lock();
             if t.input_len < LINE_BUF - 1 {
-                let idx = t.input_len;
-                t.input[idx] = c;
+                let pos = t.cursor_pos;
+                let len = t.input_len;
+                t.input.copy_within(pos..len, pos + 1);
+                t.input[pos] = c;
                 t.input_len += 1;
-                t.cmd_hpos = 0; // typing resets history browse
+                t.cursor_pos += 1;
+                t.cmd_hpos = 0;
                 TermAction::RedrawInput
             } else {
                 TermAction::Nothing
@@ -330,6 +432,7 @@ fn execute_input() {
         t.push_bytes(&echo[..pn + cn], PROMPT_COL);
         t.push_cmd_hist(&cmd_data, cmd_len);
         t.input_len = 0;
+        t.cursor_pos = 0;
         t.cmd_hpos = 0;
     }
 
@@ -370,6 +473,7 @@ fn run_cmd(cmd: &str, args: &str) {
             t.push_str("  ping <ip>         - send ICMP echo to <ip>", TEXT_NORM);
             t.push_str("  dns <host>        - resolve hostname via DNS", TEXT_NORM);
             t.push_str("  http <url>        - HTTP GET (e.g. http http://example.com/)", TEXT_NORM);
+            t.push_str("  netcheck [n]      - run ping/dns/http checks n times (default 3)", TEXT_NORM);
             t.push_str("  exec <prog>        - run user program (hello/gui)", TEXT_NORM);
             t.push_str("  ps                 - list processes", TEXT_NORM);
             t.push_str("  kill <pid>         - terminate process", TEXT_NORM);
@@ -493,6 +597,10 @@ fn run_cmd(cmd: &str, args: &str) {
 
         "http" => {
             cmd_http(args);
+        }
+
+        "netcheck" => {
+            cmd_netcheck(args);
         }
 
         "exec" => {
@@ -1102,23 +1210,7 @@ fn cmd_ping(args: &str) {
 
 /// Send ARP requests until the target MAC is in the cache, or 1000ms elapses.
 fn resolve_arp(ip: [u8; 4]) -> Option<[u8; 6]> {
-    // Check cache first
-    if let Some(m) = crate::net::arp::cache_lookup(ip) {
-        return Some(m);
-    }
-    // Send up to 3 requests, 350ms apart
-    for _ in 0..3 {
-        crate::net::arp::send_request(ip);
-        let deadline = crate::arch::x86_64::interrupts::uptime_ms() + 350;
-        while crate::arch::x86_64::interrupts::uptime_ms() < deadline {
-            crate::net::poll_and_dispatch();
-            if let Some(m) = crate::net::arp::cache_lookup(ip) {
-                return Some(m);
-            }
-            crate::arch::x86_64::halt::idle_once();
-        }
-    }
-    None
+    crate::net::arp::resolve_with_retry(ip, 1050, 3)
 }
 
 /// Format a MAC address into buf as "xx:xx:xx:xx:xx:xx". Returns bytes written.
@@ -1162,7 +1254,7 @@ fn cmd_dns(args: &str) {
     }
 
     match crate::net::dns::resolve(name, 3000) {
-        Some(ip) => {
+        Ok(ip) => {
             let mut buf = [0u8; LINE_BUF];
             let pfx = b"  -> ";
             let mut p = pfx.len();
@@ -1170,8 +1262,33 @@ fn cmd_dns(args: &str) {
             p += write_ipv4(&mut buf[p..], ip);
             TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, 0x66FF66);
         }
-        None => {
-            TERM.lock().push_str("dns: no response (timeout or NXDOMAIN)", ERR_COL);
+        Err(crate::net::dns::DnsError::ArpFailed) => {
+            TERM.lock().push_str("dns: gateway ARP failed (NIC or slirp unreachable)", ERR_COL);
+        }
+        Err(crate::net::dns::DnsError::SendFailed) => {
+            TERM.lock().push_str("dns: UDP send failed (NIC TX error)", ERR_COL);
+        }
+        Err(crate::net::dns::DnsError::NxDomain) => {
+            TERM.lock().push_str("dns: NXDOMAIN (name does not exist)", ERR_COL);
+        }
+        Err(crate::net::dns::DnsError::RcodeError(rc)) => {
+            let mut buf = [0u8; LINE_BUF];
+            let pfx = b"dns: server error RCODE=";
+            let mut p = pfx.len().min(LINE_BUF);
+            buf[..p].copy_from_slice(&pfx[..p]);
+            p += write_dec(&mut buf[p..], rc as u64);
+            let hint: &[u8] = match rc {
+                2 => b" (SERVFAIL - upstream resolver failed)",
+                3 => b" (NXDOMAIN)",
+                5 => b" (REFUSED)",
+                _ => b"",
+            };
+            let hl = hint.len().min(LINE_BUF - p);
+            buf[p..p+hl].copy_from_slice(&hint[..hl]); p += hl;
+            TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, ERR_COL);
+        }
+        Err(_) => {
+            TERM.lock().push_str("dns: no response (timeout)", ERR_COL);
         }
     }
 }
@@ -1294,6 +1411,146 @@ fn cmd_http(args: &str) {
             }
         }
     }
+}
+
+/// `netcheck [n]` — run gateway ping + DNS + HTTP checks repeatedly.
+/// Default loops: 3. Max loops: 9.
+fn cmd_netcheck(args: &str) {
+    let loops = {
+        let a = args.trim();
+        if a.is_empty() {
+            3usize
+        } else {
+            let mut v = 0usize;
+            let mut ok = false;
+            for b in a.bytes() {
+                if b < b'0' || b > b'9' {
+                    v = 0;
+                    ok = false;
+                    break;
+                }
+                ok = true;
+                v = v.saturating_mul(10).saturating_add((b - b'0') as usize);
+            }
+            if ok { v.clamp(1, 9) } else { 3 }
+        }
+    };
+
+    if !crate::net::driver::is_ready() {
+        TERM.lock().push_str("netcheck: NIC not ready", ERR_COL);
+        return;
+    }
+    let cfg = match crate::net::config::get() {
+        Some(c) => c,
+        None => {
+            TERM.lock().push_str("netcheck: IP not configured", ERR_COL);
+            return;
+        }
+    };
+
+    let mut ping_pass = 0usize;
+    let mut dns_pass = 0usize;
+    let mut http_pass = 0usize;
+
+    for i in 0..loops {
+        // Header: "netcheck run 1/3"
+        let mut hdr = [0u8; LINE_BUF];
+        let mut hp = 0usize;
+        let pfx = b"netcheck run ";
+        let pl = pfx.len().min(LINE_BUF);
+        hdr[..pl].copy_from_slice(&pfx[..pl]);
+        hp += pl;
+        hp += write_dec(&mut hdr[hp..], (i + 1) as u64);
+        if hp < LINE_BUF { hdr[hp] = b'/'; hp += 1; }
+        hp += write_dec(&mut hdr[hp..], loops as u64);
+        TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&hdr[..hp]) }, 0x88CCFF);
+
+        // Check 1: Ping gateway
+        let ping_ok = {
+            let gw = cfg.gateway;
+            match resolve_arp(gw) {
+                Some(dst_mac) => {
+                    let id = 0xB200u16;
+                    let seq = i as u16;
+                    crate::net::icmp::send_echo_request_to(gw, dst_mac, id, seq);
+                    let deadline = crate::arch::x86_64::interrupts::uptime_ms() + 1200;
+                    let mut got = false;
+                    while crate::arch::x86_64::interrupts::uptime_ms() < deadline {
+                        crate::net::poll_and_dispatch();
+                        if let Some(reply) = crate::net::icmp::poll_reply() {
+                            if reply.id == id && reply.seq == seq {
+                                got = true;
+                                break;
+                            }
+                        }
+                        crate::arch::x86_64::halt::idle_once();
+                    }
+                    got
+                }
+                None => false,
+            }
+        };
+        if ping_ok { ping_pass += 1; }
+        TERM.lock().push_str(if ping_ok { "  ping: pass" } else { "  ping: fail" },
+                             if ping_ok { 0x66FF66 } else { ERR_COL });
+
+        // Check 2: DNS
+        let dns_ok = crate::net::dns::resolve("example.com", 3000).is_ok();
+        if dns_ok { dns_pass += 1; }
+        TERM.lock().push_str(if dns_ok { "  dns:  pass" } else { "  dns:  fail" },
+                             if dns_ok { 0x66FF66 } else { ERR_COL });
+
+        // Check 3: HTTP
+        static mut NETCHECK_HTTP_BUF: [u8; 4096] = [0u8; 4096];
+        let http_result = crate::net::http::get("example.com", 80, "/", unsafe { &mut NETCHECK_HTTP_BUF });
+        let http_ok = match http_result {
+            Ok(n) => n > 0,
+            Err(crate::net::http::HttpError::BufferTooSmall) => true,
+            Err(_) => false,
+        };
+        if http_ok { http_pass += 1; }
+        let http_msg: &str = if http_ok { "  http: pass" } else {
+            match http_result {
+                Err(crate::net::http::HttpError::ConnectTimeout) => "  http: fail (connect timeout)",
+                Err(crate::net::http::HttpError::SendFailed)     => "  http: fail (send failed)",
+                Err(crate::net::http::HttpError::ResponseTimeout)=> "  http: fail (response timeout)",
+                Err(crate::net::http::HttpError::DnsTimeout)     => "  http: fail (dns timeout)",
+                _ => "  http: fail",
+            }
+        };
+        TERM.lock().push_str(http_msg, if http_ok { 0x66FF66 } else { ERR_COL });
+    }
+
+    // Summary
+    let mut l1 = [0u8; LINE_BUF];
+    let mut p1 = 0usize;
+    let pfx1 = b"summary ping: ";
+    l1[..pfx1.len()].copy_from_slice(pfx1);
+    p1 += pfx1.len();
+    p1 += write_dec(&mut l1[p1..], ping_pass as u64);
+    if p1 < LINE_BUF { l1[p1] = b'/'; p1 += 1; }
+    p1 += write_dec(&mut l1[p1..], loops as u64);
+    TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&l1[..p1]) }, if ping_pass == loops { 0x66FF66 } else { ERR_COL });
+
+    let mut l2 = [0u8; LINE_BUF];
+    let mut p2 = 0usize;
+    let pfx2 = b"summary dns:  ";
+    l2[..pfx2.len()].copy_from_slice(pfx2);
+    p2 += pfx2.len();
+    p2 += write_dec(&mut l2[p2..], dns_pass as u64);
+    if p2 < LINE_BUF { l2[p2] = b'/'; p2 += 1; }
+    p2 += write_dec(&mut l2[p2..], loops as u64);
+    TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&l2[..p2]) }, if dns_pass == loops { 0x66FF66 } else { ERR_COL });
+
+    let mut l3 = [0u8; LINE_BUF];
+    let mut p3 = 0usize;
+    let pfx3 = b"summary http: ";
+    l3[..pfx3.len()].copy_from_slice(pfx3);
+    p3 += pfx3.len();
+    p3 += write_dec(&mut l3[p3..], http_pass as u64);
+    if p3 < LINE_BUF { l3[p3] = b'/'; p3 += 1; }
+    p3 += write_dec(&mut l3[p3..], loops as u64);
+    TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&l3[..p3]) }, if http_pass == loops { 0x66FF66 } else { ERR_COL });
 }
 
 /// Find the offset of the HTTP body (after \r\n\r\n).
@@ -1501,6 +1758,16 @@ impl App for TerminalApp {
             TermAction::RedrawInput => AppAction::RedrawInput,
             TermAction::Nothing    => AppAction::Nothing,
         }
+    }
+
+    fn handle_mouse_scroll(&mut self, delta: i32) -> AppAction {
+        let mut t = TERM.lock();
+        if delta > 0 {
+            t.scroll_off = t.scroll_off.saturating_add(delta as usize);
+        } else if delta < 0 {
+            t.scroll_off = t.scroll_off.saturating_sub((-delta) as usize);
+        }
+        AppAction::RedrawAll
     }
 
     fn refresh_interval_ms(&self) -> Option<u64> { None }

@@ -41,7 +41,7 @@ pub fn get(host: &str, port: u16, path: &str, out: &mut [u8]) -> Result<usize, H
     let dst_ip = if let Some(ip) = parse_dotted_ip(host) {
         ip
     } else {
-        dns::resolve(host, 3000).ok_or(HttpError::DnsTimeout)?
+        dns::resolve(host, 3000).map_err(|_| HttpError::DnsTimeout)?
     };
 
     // ── TCP connect ───────────────────────────────────────────────────────
@@ -76,6 +76,10 @@ pub fn get(host: &str, port: u16, path: &str, out: &mut [u8]) -> Result<usize, H
     // ── Read response ─────────────────────────────────────────────────────
     let mut total = 0usize;
     let deadline = uptime_ms() + DEFAULT_TIMEOUT_MS;
+    let mut timed_out = false;
+    // Spin counter: poll several times before halting to avoid 10ms hlt
+    // penalty between consecutive TCP segments from the server.
+    let mut spin = 0u32;
 
     loop {
         crate::net::poll_and_dispatch();
@@ -88,6 +92,7 @@ pub fn get(host: &str, port: u16, path: &str, out: &mut [u8]) -> Result<usize, H
             }
             let n = tcp::read(&mut out[total..]);
             total += n;
+            spin = 0; // reset spin counter on progress
         }
 
         if tcp::is_closed_remote() {
@@ -100,13 +105,25 @@ pub fn get(host: &str, port: u16, path: &str, out: &mut [u8]) -> Result<usize, H
         }
 
         if uptime_ms() >= deadline {
+            timed_out = true;
             break;
         }
 
-        crate::arch::x86_64::halt::idle_once();
+        // Spin a few rounds before halting so back-to-back TCP segments
+        // from the server are caught without waiting for the next timer IRQ.
+        spin += 1;
+        if spin >= 16 {
+            spin = 0;
+            crate::arch::x86_64::halt::idle_once();
+        } else {
+            core::hint::spin_loop();
+        }
     }
 
     tcp::close();
+    if timed_out && total == 0 {
+        return Err(HttpError::ResponseTimeout);
+    }
     Ok(total)
 }
 

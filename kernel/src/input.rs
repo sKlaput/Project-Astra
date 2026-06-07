@@ -55,6 +55,8 @@ pub enum Event {
     KeyPress(Key),
     MouseMove(i32, i32),
     MouseButton(u8),
+    /// Scroll wheel delta: positive = scroll up, negative = scroll down.
+    MouseScroll(i32),
 }
 
 // ── Scancode decoding ─────────────────────────────────────────────────────────
@@ -205,6 +207,14 @@ pub fn poll_events(buf: &mut [Event]) -> usize {
                 buf[count] = Event::MouseButton(pkt.buttons);
                 count += 1;
             }
+        }
+
+        // Emit scroll event when wheel moves
+        if count < buf.len() && pkt.scroll != 0 {
+            // scroll<0 means wheel rolled toward user (down), invert so
+            // positive = scroll content up (towards older lines)
+            buf[count] = Event::MouseScroll(-(pkt.scroll as i32));
+            count += 1;
         }
     }
 

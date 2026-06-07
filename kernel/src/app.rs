@@ -82,6 +82,12 @@ pub trait App {
         AppAction::Nothing
     }
 
+    /// Handle a scroll-wheel event. `delta` is lines to scroll:
+    /// positive = scroll content up (towards older output), negative = down.
+    fn handle_mouse_scroll(&mut self, _delta: i32) -> AppAction {
+        AppAction::Nothing
+    }
+
     /// Whether the compositor should allow multiple simultaneous windows of
     /// this app type.  Defaults to `false` (raise-existing policy).
     /// Apps like Editor that open distinct files return `true`.
