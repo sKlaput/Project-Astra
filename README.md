@@ -166,8 +166,8 @@ docs/
 | Milestone | Status |
 |---|---|
 | v0.1 — Persistent desktop, full app suite, user processes | ✅ Done |
-| v0.2 — ARP → IPv4 → ICMP → UDP → DNS → TCP → HTTP GET | 🔧 In progress |
-| v0.3 — Physical hardware, multi-core | 🗓 Planned |
+| v0.2 — ARP → IPv4 → ICMP → UDP → DNS → TCP → HTTP GET | ✅ Done |
+| v0.3 — Physical hardware, multi-core | In progress|
 
 See [docs/roadmap.md](docs/roadmap.md) for details.
 
