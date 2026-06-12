@@ -87,6 +87,26 @@ pub extern "C" fn kmain() -> ! {
     console::log("kernel: boot entry reached");
     console::log("kernel: phase E1 skeleton active");
 
+    {
+        let cr0 = arch::x86_64::cpu::cr0();
+        let cr4 = arch::x86_64::cpu::cr4();
+        serial::write_str("kernel: protections WP=");
+        serial::write_u64(((cr0 >> 16) & 1) as u64);
+        serial::write_str(" SMEP=");
+        serial::write_u64(((cr4 >> 20) & 1) as u64);
+        serial::write_str(" SMAP=");
+        serial::write_u64(((cr4 >> 21) & 1) as u64);
+        serial::write_str(" UMIP=");
+        serial::write_u64(((cr4 >> 11) & 1) as u64);
+        serial::write_str(" smep_avail=");
+        serial::write_u64(arch::x86_64::cpu::has_smep() as u64);
+        serial::write_str(" smap_avail=");
+        serial::write_u64(arch::x86_64::cpu::has_smap() as u64);
+        serial::write_str(" umip_avail=");
+        serial::write_u64(arch::x86_64::cpu::has_umip() as u64);
+        serial::write_line("");
+    }
+
     if !boot::protocol::limine_revision_supported() {
         console::log("kernel: unsupported limine revision");
         arch::x86_64::halt::halt_loop();

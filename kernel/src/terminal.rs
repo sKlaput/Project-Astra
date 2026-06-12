@@ -1814,6 +1814,40 @@ fn cmd_memprobe() {
     let nxe_on = (efer & (1u64 << 11)) != 0;
     line(&mut t, b"  EFER.NXE enabled               = ", nxe_on);
 
+    // CR0.WP — kernel writes respect read-only PTEs.
+    let cr0 = crate::arch::x86_64::cpu::cr0();
+    let cr4 = crate::arch::x86_64::cpu::cr4();
+    let wp_on = (cr0 & (1u64 << 16)) != 0;
+    let smep_on = (cr4 & (1u64 << 20)) != 0;
+    let smap_on = (cr4 & (1u64 << 21)) != 0;
+    let umip_on = (cr4 & (1u64 << 11)) != 0;
+    let smep_avail = crate::arch::x86_64::cpu::has_smep();
+    let smap_avail = crate::arch::x86_64::cpu::has_smap();
+    let umip_avail = crate::arch::x86_64::cpu::has_umip();
+    line(&mut t, b"  CR0.WP enabled                 = ", wp_on);
+    // SMEP: PASS if enabled, or PASS if not supported by host (TCG often).
+    line(&mut t, b"  CR4.SMEP enabled               = ", smep_on || !smep_avail);
+    // UMIP: same gating.
+    line(&mut t, b"  CR4.UMIP enabled               = ", umip_on || !umip_avail);
+    // SMAP intentionally left off; just report state as info.
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  CR4.SMAP                       = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        let tail: &[u8] = if smap_on {
+            b"on"
+        } else if smap_avail {
+            b"off (kernel reads user bufs directly; tracked)"
+        } else {
+            b"unsupported"
+        };
+        let n = tail.len().min(LINE_BUF - p);
+        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
     // Process count + currently-tracked owned frames for the running task.
     let (_entries, count) = crate::process::list_all();
     {

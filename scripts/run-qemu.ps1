@@ -64,6 +64,7 @@ if ($Visual) {
     $pcapFile = Join-Path $buildDir "net.pcap"
     $qemuArgs = @(
         "-machine", "q35",
+        "-cpu", "max",
         "-m", "512M",
         "-smp", "1",
         "-no-reboot"
@@ -81,6 +82,7 @@ if ($Visual) {
 } else {
     $qemuArgs = @(
         "-machine", "q35",
+        "-cpu", "max",
         "-m", "512M",
         "-smp", "1",
         "-no-reboot"
