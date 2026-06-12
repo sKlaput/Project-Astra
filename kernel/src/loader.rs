@@ -591,6 +591,9 @@ pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadErr
             if writable {
                 flag_bits |= PageTableFlags::WRITABLE;
             }
+            if !executable {
+                flag_bits |= PageTableFlags::EXECUTE_DISABLE;
+            }
             let flags = PageTableFlags::new(flag_bits);
 
             let virt_page = p_vaddr

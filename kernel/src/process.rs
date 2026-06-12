@@ -164,25 +164,42 @@ pub fn spawn_elf_process(
 
     let entry_rip = crate::loader::load_elf_into_pml4(elf_image, user_pml4_phys).ok()?;
 
-    if user_stack_virt % crate::memory::paging::PAGE_SIZE != 0 {
-        return None;
-    }
-    if !crate::memory::paging::is_user_range(user_stack_virt, crate::memory::paging::PAGE_SIZE) {
+    let page_size = crate::memory::paging::PAGE_SIZE;
+    if user_stack_virt % page_size != 0 {
         return None;
     }
 
-    let frame = crate::memory::frame_allocator::allocate_frame()?;
-    crate::memory::user_frames::register(user_pml4_phys as u64, frame.start_address() as u64);
-    let flags = crate::memory::paging::PageTableFlags::new(
+    // Stack layout (grows down):
+    //   [user_stack_virt - PAGE_SIZE, user_stack_virt)             -> guard (unmapped)
+    //   [user_stack_virt, user_stack_virt + USER_STACK_PAGES*4K)   -> mapped, NX, R/W
+    //   RSP starts at the top of the mapped region.
+    const USER_STACK_PAGES: usize = 4;
+    let stack_bytes = USER_STACK_PAGES.checked_mul(page_size)?;
+    if !crate::memory::paging::is_user_range(user_stack_virt, stack_bytes) {
+        return None;
+    }
+    // Guard page must be in user range and remain unmapped (fresh PML4 guarantees this).
+    let guard_virt = user_stack_virt.checked_sub(page_size)?;
+    if !crate::memory::paging::is_user_range(guard_virt, page_size) {
+        return None;
+    }
+
+    let stack_flags = crate::memory::paging::PageTableFlags::new(
         crate::memory::paging::PageTableFlags::PRESENT
             | crate::memory::paging::PageTableFlags::WRITABLE
-            | crate::memory::paging::PageTableFlags::USER_ACCESSIBLE,
+            | crate::memory::paging::PageTableFlags::USER_ACCESSIBLE
+            | crate::memory::paging::PageTableFlags::EXECUTE_DISABLE,
     );
-    unsafe {
-        crate::memory::paging::map_page_in_pml4(user_pml4_phys, user_stack_virt, frame.start_address(), flags).ok()?;
+    for i in 0..USER_STACK_PAGES {
+        let frame = crate::memory::frame_allocator::allocate_frame()?;
+        crate::memory::user_frames::register(user_pml4_phys as u64, frame.start_address() as u64);
+        let virt = user_stack_virt + i * page_size;
+        unsafe {
+            crate::memory::paging::map_page_in_pml4(user_pml4_phys, virt, frame.start_address(), stack_flags).ok()?;
+        }
     }
 
-    let user_rsp = user_stack_virt as u64 + crate::memory::paging::PAGE_SIZE as u64 - 8;
+    let user_rsp = (user_stack_virt + stack_bytes - 16) as u64;
     let task_id = crate::scheduler::spawn_user_task_prio_name(
         0x400000,
         user_stack_virt as u64,

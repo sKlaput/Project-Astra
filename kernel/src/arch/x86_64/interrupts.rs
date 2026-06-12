@@ -294,12 +294,24 @@ extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: Interrup
     crate::serial::write_line("");
 }
 
-extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, _error_code: PageFaultErrorCode) {
+extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
     let cpl = stack_frame.code_segment.0 as u64 & 3;
     let cr2: u64;
     unsafe {
         core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
     }
+
+    // Bit 0: present (1 = protection violation, 0 = non-present page)
+    // Bit 1: write (1 = write access, 0 = read)
+    // Bit 2: user (1 = ring-3 access)
+    // Bit 3: reserved-bits-set in PTE
+    // Bit 4: instruction fetch (NX violation when NXE enabled)
+    let ec = error_code.bits();
+    let present = (ec & 0x1) != 0;
+    let write   = (ec & 0x2) != 0;
+    let user    = (ec & 0x4) != 0;
+    let rsvd    = (ec & 0x8) != 0;
+    let ifetch  = (ec & 0x10) != 0;
 
     if cpl == 3 {
         // Ring-3 page fault: log, kill the user task, resume the scheduler.
@@ -307,6 +319,15 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, _
         crate::serial::write_u64(stack_frame.instruction_pointer.as_u64());
         crate::serial::write_str(" cr2=");
         crate::serial::write_u64(cr2);
+        crate::serial::write_str(" ec=");
+        crate::serial::write_u64(ec);
+        crate::serial::write_str(" cause=");
+        crate::serial::write_str(if !present { "not-present" }
+                                 else if rsvd { "rsvd-pte" }
+                                 else if ifetch { "exec-no-x" }
+                                 else if write { "write-violation" }
+                                 else { "read-violation" });
+        crate::serial::write_str(if user { " src=user" } else { " src=kernel" });
         crate::serial::write_line("");
         crate::scheduler::abort_current_user_task_from_fault();
     }
@@ -316,7 +337,15 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, _
     crate::serial::write_u64(stack_frame.instruction_pointer.as_u64());
     crate::serial::write_str(" CR2: ");
     crate::serial::write_u64(cr2);
-    crate::serial::write_line("");
+    crate::serial::write_str(" EC: ");
+    crate::serial::write_u64(ec);
+    crate::serial::write_str(" [");
+    if !present { crate::serial::write_str("not-present "); } else { crate::serial::write_str("protection "); }
+    if write { crate::serial::write_str("write "); } else { crate::serial::write_str("read "); }
+    if user { crate::serial::write_str("user "); } else { crate::serial::write_str("supervisor "); }
+    if rsvd { crate::serial::write_str("rsvd "); }
+    if ifetch { crate::serial::write_str("ifetch "); }
+    crate::serial::write_line("]");
 }
 
 fn remap_pic(master_offset: u8, slave_offset: u8) {

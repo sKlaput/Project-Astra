@@ -5,6 +5,7 @@ const IA32_STAR: u32 = 0xC000_0081;
 const IA32_LSTAR: u32 = 0xC000_0082;
 const IA32_FMASK: u32 = 0xC000_0084;
 const EFER_SCE: u64 = 1;
+const EFER_NXE: u64 = 1 << 11;
 const RFLAGS_IF: u64 = 1 << 9;
 
 const SYSCALL_STACK_SIZE: usize = 32 * 1024;
@@ -165,7 +166,7 @@ pub fn init() {
     let star = (user_star_base << 48) | (kernel_cs << 32);
 
     let efer = read_msr(IA32_EFER);
-    write_msr(IA32_EFER, efer | EFER_SCE);
+    write_msr(IA32_EFER, efer | EFER_SCE | EFER_NXE);
     write_msr(IA32_STAR, star);
     write_msr(IA32_LSTAR, syscall_entry_addr());
     // Clear IF on SYSCALL entry so the 2-instruction window between
