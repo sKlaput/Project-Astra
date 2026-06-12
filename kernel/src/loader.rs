@@ -440,7 +440,14 @@ pub enum LoadError {
 /// existing mappings, and no concurrent page-table mutation may occur.
 pub fn load_elf(bytes: &[u8]) -> Result<u64, LoadError> {
     use crate::memory::frame_allocator::allocate_frame;
-    use crate::memory::paging::{hhdm_offset, map_page_current, PageTableFlags, PAGE_SIZE};
+    use crate::memory::paging::{
+        hhdm_offset,
+        is_user_range,
+        is_user_virt,
+        map_page_current,
+        PageTableFlags,
+        PAGE_SIZE,
+    };
 
     #[derive(Clone, Copy)]
     struct SegmentRange {
@@ -482,6 +489,9 @@ pub fn load_elf(bytes: &[u8]) -> Result<u64, LoadError> {
 
     if e_phentsize < 56 {
         return Err(LoadError::InvalidProgramHeader);
+    }
+    if !is_user_virt(e_entry as usize) {
+        return Err(LoadError::UnsupportedSegmentLayout);
     }
 
     let segs = e_phnum.min(MAX_LOAD_SEGS);
@@ -529,6 +539,9 @@ pub fn load_elf(bytes: &[u8]) -> Result<u64, LoadError> {
         }
 
         let virt_end = checked_end(p_vaddr, p_memsz)?;
+        if !is_user_range(p_vaddr, p_memsz) {
+            return Err(LoadError::UnsupportedSegmentLayout);
+        }
         for existing in mapped_ranges.iter().take(mapped_range_count) {
             let overlaps = p_vaddr < existing.end && existing.start < virt_end;
             if overlaps {

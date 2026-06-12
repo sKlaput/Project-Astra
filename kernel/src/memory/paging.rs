@@ -7,6 +7,35 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 const DEFAULT_HHDM_OFFSET: usize = 0xffff_8000_0000_0000;
 static HHDM_OFFSET_VALUE: AtomicUsize = AtomicUsize::new(DEFAULT_HHDM_OFFSET);
 
+/// Lower-half canonical user virtual space limit (exclusive).
+///
+/// Valid user-space addresses satisfy: `addr < USER_SPACE_LIMIT`.
+pub const USER_SPACE_LIMIT: usize = 0x0000_8000_0000_0000;
+/// Upper-half canonical kernel virtual base (inclusive).
+pub const KERNEL_SPACE_BASE: usize = 0xffff_8000_0000_0000;
+
+#[inline]
+pub fn is_user_virt(addr: usize) -> bool {
+    addr < USER_SPACE_LIMIT
+}
+
+#[inline]
+pub fn is_kernel_virt(addr: usize) -> bool {
+    addr >= KERNEL_SPACE_BASE
+}
+
+/// Returns true if `[start, start+len)` lies fully in user space.
+#[inline]
+pub fn is_user_range(start: usize, len: usize) -> bool {
+    if !is_user_virt(start) {
+        return false;
+    }
+    match start.checked_add(len) {
+        Some(end) => end <= USER_SPACE_LIMIT,
+        None => false,
+    }
+}
+
 pub fn set_hhdm_offset(offset: usize) {
     HHDM_OFFSET_VALUE.store(offset, Ordering::Relaxed);
 }
@@ -148,6 +177,10 @@ impl PageTableManager {
         phys: usize,
         flags: PageTableFlags,
     ) -> Result<(), &'static str> {
+        if flags.bits() & PageTableFlags::USER_ACCESSIBLE != 0 && !is_user_virt(virt) {
+            return Err("user mapping outside user virtual range");
+        }
+
         let pml4_index = (virt >> 39) & 0x1ff;
         let pdpt_index = (virt >> 30) & 0x1ff;
         let pdt_index = (virt >> 21) & 0x1ff;

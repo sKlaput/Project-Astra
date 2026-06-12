@@ -155,6 +155,13 @@ pub fn spawn_elf_process(
 
     let entry_rip = crate::loader::load_elf(elf_image).ok()?;
 
+    if user_stack_virt % crate::memory::paging::PAGE_SIZE != 0 {
+        return None;
+    }
+    if !crate::memory::paging::is_user_range(user_stack_virt, crate::memory::paging::PAGE_SIZE) {
+        return None;
+    }
+
     let frame = crate::memory::frame_allocator::allocate_frame()?;
     let flags = crate::memory::paging::PageTableFlags::new(
         crate::memory::paging::PageTableFlags::PRESENT
