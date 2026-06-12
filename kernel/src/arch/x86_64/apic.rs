@@ -185,3 +185,128 @@ pub fn log_summary() {
     crate::serial::write_u64(protocol::rsdp_address().unwrap_or(0) as u64);
     crate::serial::write_line("");
 }
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// Local APIC MMIO + timer calibration.
+//
+// All accesses go through the HHDM map at phys + paging::hhdm_offset().
+// LAPIC MMIO is strongly-ordered uncached on real hardware; under QEMU
+// the framebuffer-style HHDM mapping suffices because QEMU emulates the
+// LAPIC register file with proper ordering anyway. A future hardening
+// pass should remap the LAPIC page with PAT=UC explicitly.
+// ──────────────────────────────────────────────────────────────────────────
+
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering as AOrd};
+
+const LAPIC_REG_ID: usize = 0x020;
+const LAPIC_REG_VERSION: usize = 0x030;
+#[allow(dead_code)]
+const LAPIC_REG_EOI: usize = 0x0B0;
+const LAPIC_REG_SVR: usize = 0x0F0;
+const LAPIC_REG_LVT_TIMER: usize = 0x320;
+const LAPIC_REG_INITIAL_COUNT: usize = 0x380;
+const LAPIC_REG_CURRENT_COUNT: usize = 0x390;
+const LAPIC_REG_DIVIDE_CONFIG: usize = 0x3E0;
+
+const SVR_ENABLE: u32 = 1 << 8;
+const LVT_MASKED: u32 = 1 << 16;
+
+static CALIBRATED: AtomicBool = AtomicBool::new(false);
+static TICKS_PER_MS: AtomicU32 = AtomicU32::new(0);
+static MEASURED_BUS_HZ: AtomicU32 = AtomicU32::new(0);
+
+#[inline]
+fn lapic_virt() -> usize {
+    (read_apic_base().phys as usize) + crate::memory::paging::hhdm_offset()
+}
+
+#[inline]
+unsafe fn lapic_read(reg: usize) -> u32 {
+    unsafe { core::ptr::read_volatile((lapic_virt() + reg) as *const u32) }
+}
+
+#[inline]
+unsafe fn lapic_write(reg: usize, val: u32) {
+    unsafe { core::ptr::write_volatile((lapic_virt() + reg) as *mut u32, val) };
+}
+
+/// Calibrate the LAPIC timer against the PIT-driven uptime_ms clock.
+/// Side effects on the LAPIC: enables SVR with spurious vector 0xFF,
+/// programs the timer divider to /16, leaves the timer LVT masked
+/// at the end. The scheduler tick source is NOT switched here.
+pub fn calibrate_timer() {
+    if !read_apic_base().global_enable {
+        return;
+    }
+    if CALIBRATED.load(AOrd::Relaxed) {
+        return;
+    }
+
+    unsafe {
+        let svr = lapic_read(LAPIC_REG_SVR);
+        lapic_write(LAPIC_REG_SVR, svr | SVR_ENABLE | 0xFF);
+        lapic_write(LAPIC_REG_DIVIDE_CONFIG, 0b0011);
+        lapic_write(LAPIC_REG_LVT_TIMER, LVT_MASKED);
+
+        let start_ms = crate::arch::x86_64::interrupts::uptime_ms();
+        lapic_write(LAPIC_REG_INITIAL_COUNT, 0xFFFF_FFFF);
+        let target = start_ms + 50;
+        while crate::arch::x86_64::interrupts::uptime_ms() < target {
+            core::hint::spin_loop();
+        }
+        let end_count = lapic_read(LAPIC_REG_CURRENT_COUNT);
+        lapic_write(LAPIC_REG_INITIAL_COUNT, 0);
+
+        let elapsed_ticks = 0xFFFF_FFFFu32.wrapping_sub(end_count);
+        let actual_ms = crate::arch::x86_64::interrupts::uptime_ms() - start_ms;
+        if actual_ms == 0 {
+            return;
+        }
+        let ticks_per_ms = (elapsed_ticks as u64 / actual_ms) as u32;
+        let bus_hz = (ticks_per_ms as u64).saturating_mul(1000).saturating_mul(16) as u32;
+        TICKS_PER_MS.store(ticks_per_ms, AOrd::Relaxed);
+        MEASURED_BUS_HZ.store(bus_hz, AOrd::Relaxed);
+        CALIBRATED.store(true, AOrd::Relaxed);
+    }
+}
+
+pub fn lapic_ticks_per_ms() -> u32 {
+    TICKS_PER_MS.load(AOrd::Relaxed)
+}
+
+pub fn lapic_bus_hz() -> u32 {
+    MEASURED_BUS_HZ.load(AOrd::Relaxed)
+}
+
+pub fn lapic_calibrated() -> bool {
+    CALIBRATED.load(AOrd::Relaxed)
+}
+
+pub fn lapic_register_id() -> u32 {
+    if !read_apic_base().global_enable {
+        return u32::MAX;
+    }
+    unsafe { lapic_read(LAPIC_REG_ID) >> 24 }
+}
+
+pub fn lapic_register_version() -> u32 {
+    if !read_apic_base().global_enable {
+        return 0;
+    }
+    unsafe { lapic_read(LAPIC_REG_VERSION) }
+}
+
+pub fn log_calibration() {
+    crate::serial::write_str("apic: lapic_timer cal=");
+    crate::serial::write_u64(lapic_calibrated() as u64);
+    crate::serial::write_str(" ticks_per_ms=");
+    crate::serial::write_u64(lapic_ticks_per_ms() as u64);
+    crate::serial::write_str(" bus_hz=");
+    crate::serial::write_u64(lapic_bus_hz() as u64);
+    crate::serial::write_str(" lapic_id_mmio=");
+    crate::serial::write_u64(lapic_register_id() as u64);
+    crate::serial::write_str(" lapic_ver=");
+    crate::serial::write_u64(lapic_register_version() as u64);
+    crate::serial::write_line("");
+}

@@ -26,6 +26,7 @@ mod poste14_gui_probes;
 mod poste14_gui_probes_refactored;
 mod subsystem_validation;
 mod splash;
+mod acpi;
 mod input;
 mod app;
 mod desktop;
@@ -108,7 +109,6 @@ pub extern "C" fn kmain() -> ! {
     }
 
     arch::x86_64::apic::log_summary();
-
     if !boot::protocol::limine_revision_supported() {
         console::log("kernel: unsupported limine revision");
         arch::x86_64::halt::halt_loop();
@@ -117,6 +117,14 @@ pub extern "C" fn kmain() -> ! {
     boot::init();
     memory::init_from_boot();
     arch::x86_64::init();
+
+    // ACPI MADT discovery: read-only walk of RSDP -> RSDT/XSDT -> APIC. Used
+    // by future LAPIC-timer/IO-APIC slices; safe to fail.
+    if acpi::init() {
+        acpi::log_summary();
+    } else {
+        serial::write_line("acpi: madt not found");
+    }
 
     // Now that the heap is available, init framebuffer (allocates backbuffer)
     if framebuffer::init_from_boot() {
@@ -160,6 +168,11 @@ pub extern "C" fn kmain() -> ! {
     // boot_phases::phase_e4_e9_syscall_user();
     // boot_phases::phase_e12_e13_baseline();
     // boot_phases::phase_e14_poste14_gui_apps();
+
+    // Calibrate the Local APIC timer against the PIT-driven uptime clock.
+    // Read-only at this stage; the scheduler tick source is unchanged.
+    arch::x86_64::apic::calibrate_timer();
+    arch::x86_64::apic::log_calibration();
 
     if HEAP_ALLOC_FAILURE_PROBE {
         probe_alloc_failure_path();

@@ -2070,6 +2070,54 @@ fn cmd_cpuinfo() {
         }
     }
 
+    // MADT-derived I/O APIC and IRQ override summary.
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  MADT revision      = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], crate::acpi::madt_revision() as u64);
+        let mid = b"  PCAT-compat=";
+        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        let v: &[u8] = if crate::acpi::pcat_compat() { b"yes" } else { b"no" };
+        buf[p..p+v.len()].copy_from_slice(v); p += v.len();
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+    for io in crate::acpi::io_apics() {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"    ioapic id=";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], io.id as u64);
+        let mid = b" addr=";
+        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        p += write_hex64(&mut buf[p..], io.address as u64);
+        let mid = b" gsi_base=";
+        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        p += write_dec(&mut buf[p..], io.gsi_base as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+    for ov in crate::acpi::overrides() {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"    irq_override bus=";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], ov.bus as u64);
+        let mid = b" irq=";
+        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        p += write_dec(&mut buf[p..], ov.source_irq as u64);
+        let mid = b" gsi=";
+        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        p += write_dec(&mut buf[p..], ov.gsi as u64);
+        let mid = b" flags=";
+        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        p += write_hex64(&mut buf[p..], ov.flags as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
     t.push_str("cpuinfo: done", TEXT_NORM);
 }
 
