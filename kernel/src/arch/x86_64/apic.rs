@@ -310,3 +310,81 @@ pub fn log_calibration() {
     crate::serial::write_u64(lapic_register_version() as u64);
     crate::serial::write_line("");
 }
+
+
+const LVT_TIMER_PERIODIC: u32 = 1 << 17;
+
+static LAPIC_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn lapic_timer_active() -> bool {
+    LAPIC_ACTIVE.load(AOrd::Relaxed)
+}
+
+/// Switch the scheduler tick source from PIT to LAPIC timer in periodic mode.
+/// Requires that calibrate_timer() has succeeded. Idempotent.
+///
+/// Safety contract: caller must hold no spinlocks; this runs with IRQs briefly
+/// disabled while masking the PIT, programming the LVT, and unmasking.
+pub fn install_lapic_timer(hz: u32) -> bool {
+    if !lapic_calibrated() || hz == 0 {
+        return false;
+    }
+    if LAPIC_ACTIVE.load(AOrd::Relaxed) {
+        return true;
+    }
+    let ticks_per_ms = lapic_ticks_per_ms();
+    if ticks_per_ms == 0 {
+        return false;
+    }
+    let initial = (ticks_per_ms as u64).saturating_mul(1000) / hz as u64;
+    if initial == 0 || initial > u32::MAX as u64 {
+        return false;
+    }
+    unsafe {
+        core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+
+        // Publish the LAPIC EOI virtual address for the naked ISR before we
+        // unmask the LVT.
+        let eoi_virt = lapic_virt() as u64 + LAPIC_REG_EOI as u64;
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!(crate::arch::x86_64::interrupts::LAPIC_EOI_VIRT),
+            eoi_virt,
+        );
+
+        // Mask PIT IRQ0 so we only get LAPIC ticks.
+        crate::arch::x86_64::interrupts::mask_pit_irq();
+
+        // Program LVT: periodic | vector 0x40.
+        lapic_write(
+            LAPIC_REG_LVT_TIMER,
+            LVT_TIMER_PERIODIC
+                | crate::arch::x86_64::interrupts::LAPIC_TIMER_VECTOR as u32,
+        );
+        // Divider /16 was set in calibrate_timer; reconfirm in case.
+        lapic_write(LAPIC_REG_DIVIDE_CONFIG, 0b0011);
+        // Start periodic counting.
+        lapic_write(LAPIC_REG_INITIAL_COUNT, initial as u32);
+
+        LAPIC_ACTIVE.store(true, AOrd::Relaxed);
+        core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+    }
+    true
+}
+
+/// Stop the LAPIC timer and restore PIT IRQ0.
+pub fn uninstall_lapic_timer() -> bool {
+    if !LAPIC_ACTIVE.load(AOrd::Relaxed) {
+        return false;
+    }
+    unsafe {
+        core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+        // Stop counting and mask the LVT.
+        lapic_write(LAPIC_REG_INITIAL_COUNT, 0);
+        lapic_write(LAPIC_REG_LVT_TIMER, LVT_MASKED);
+        // Restore PIT as tick source.
+        crate::arch::x86_64::interrupts::restore_pit_irq();
+        LAPIC_ACTIVE.store(false, AOrd::Relaxed);
+        core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+    }
+    true
+}

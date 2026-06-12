@@ -480,6 +480,7 @@ fn run_cmd(cmd: &str, args: &str) {
             t.push_str("  memprobe          - kernel/user isolation diagnostic", TEXT_NORM);
             t.push_str("  memtest           - pointer-validation regression battery", TEXT_NORM);
             t.push_str("  cpuinfo           - CPU vendor/brand, APIC, topology", TEXT_NORM);
+            t.push_str("  apictest          - switch tick source PIT->LAPIC->PIT", TEXT_NORM);
             t.push_str("  echo <text>        - print text", TEXT_NORM);
             t.push_str("  Up/Down arrows    - command history", TEXT_NORM);
         }
@@ -628,6 +629,10 @@ fn run_cmd(cmd: &str, args: &str) {
 
         "cpuinfo" => {
             cmd_cpuinfo();
+        }
+
+        "apictest" => {
+            cmd_apictest();
         }
 
         "echo" => {
@@ -2119,6 +2124,99 @@ fn cmd_cpuinfo() {
     }
 
     t.push_str("cpuinfo: done", TEXT_NORM);
+}
+
+fn cmd_apictest() {
+    use crate::arch::x86_64::{apic, interrupts};
+
+    let mut t = TERM.lock();
+    t.push_str("apictest: switching tick source PIT -> LAPIC -> PIT", TEXT_NORM);
+
+    if !apic::lapic_calibrated() {
+        t.push_str("  LAPIC timer not calibrated; aborting.", ERR_COL);
+        return;
+    }
+
+    let line_kv = |t: &mut TermState, label: &[u8], value: u64| {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        buf[..label.len()].copy_from_slice(label); p += label.len();
+        p += write_dec(&mut buf[p..], value);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    };
+
+    // Drop the terminal lock while we busy-wait so other tasks (the timer
+    // tick processing in particular) can run unimpeded.
+    drop(t);
+
+    // Baseline: tick rate from PIT for ~250ms.
+    let t0_ticks = interrupts::timer_ticks();
+    let t0_ms = interrupts::uptime_ms();
+    let target_pit = t0_ms + 250;
+    while interrupts::uptime_ms() < target_pit {
+        core::hint::spin_loop();
+    }
+    let pit_delta = interrupts::timer_ticks() - t0_ticks;
+    let pit_ms = interrupts::uptime_ms() - t0_ms;
+
+    let mut t = TERM.lock();
+    line_kv(&mut t, b"  PIT phase ticks   = ", pit_delta);
+    line_kv(&mut t, b"  PIT phase ms est  = ", pit_ms);
+    drop(t);
+
+    // Switch to LAPIC at the same logical 100Hz.
+    let installed = apic::install_lapic_timer(100);
+
+    let mut t = TERM.lock();
+    if !installed {
+        t.push_str("  install_lapic_timer FAILED; PIT still active", ERR_COL);
+        return;
+    }
+    t.push_str("  LAPIC tick source ENGAGED", 0x66FF66);
+    drop(t);
+
+    // Measure LAPIC for ~250ms. Note: uptime_ms() == TIMER_TICKS * 10ms because
+    // both PIT and LAPIC fire at 100Hz, so the conversion stays valid.
+    let l0_ticks = interrupts::timer_ticks();
+    let l0_ms = interrupts::uptime_ms();
+    let target_lapic = l0_ms + 250;
+    // Hard cycle cap: ~1.5 GHz * 1s = 1.5e9; cap at 4e9 to allow for slow TCG.
+    // If uptime_ms hasn't advanced after this many spins, the LAPIC ISR is silent.
+    let spin_cap: u64 = 4_000_000_000;
+    let mut spins: u64 = 0;
+    let mut lapic_silent = false;
+    while interrupts::uptime_ms() < target_lapic {
+        core::hint::spin_loop();
+        spins = spins.wrapping_add(1);
+        if spins > spin_cap {
+            lapic_silent = true;
+            break;
+        }
+    }
+    let lapic_delta = interrupts::timer_ticks() - l0_ticks;
+    let lapic_ms = interrupts::uptime_ms() - l0_ms;
+
+    // Restore PIT immediately so the rest of the system keeps running on the
+    // proven tick path.
+    let _ = apic::uninstall_lapic_timer();
+
+    let mut t = TERM.lock();
+    line_kv(&mut t, b"  LAPIC phase ticks = ", lapic_delta);
+    line_kv(&mut t, b"  LAPIC phase ms est= ", lapic_ms);
+    t.push_str("  PIT tick source RESTORED", 0x66FF66);
+
+    if lapic_silent {
+        t.push_str("apictest: FAIL (LAPIC ISR did not fire within spin cap)", ERR_COL);
+        return;
+    }
+
+    let ok = lapic_delta > 0 && (lapic_delta as i64 - pit_delta as i64).abs() <= (pit_delta as i64 / 4 + 5);
+    if ok {
+        t.push_str("apictest: PASS", 0x66FF66);
+    } else {
+        t.push_str("apictest: FAIL (LAPIC tick rate diverged)", ERR_COL);
+    }
 }
 
 // ── App-trait wrapper ─────────────────────────────────────────────────────────

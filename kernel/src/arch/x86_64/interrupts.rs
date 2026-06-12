@@ -93,6 +93,66 @@ extern "C" {
     fn timer_interrupt_naked();
 }
 
+// ---------------------------------------------------------------------------
+// LAPIC timer ISR — same shape as the PIT-driven naked ISR but sends LAPIC
+// EOI instead of PIC EOI. The LAPIC EOI register virtual address is loaded
+// from a globally-accessible variable populated by apic::install_lapic_timer.
+// ---------------------------------------------------------------------------
+#[unsafe(no_mangle)]
+pub static mut LAPIC_EOI_VIRT: u64 = 0;
+
+core::arch::global_asm!(
+    ".intel_syntax noprefix",
+    "    .global lapic_timer_interrupt_naked",
+    "lapic_timer_interrupt_naked:",
+    "    push rax",
+    "    push rcx",
+    "    push rdx",
+    "    push rbx",
+    "    push rbp",
+    "    push rsi",
+    "    push rdi",
+    "    push r8",
+    "    push r9",
+    "    push r10",
+    "    push r11",
+    "    push r12",
+    "    push r13",
+    "    push r14",
+    "    push r15",
+    // EOI: *LAPIC_EOI_VIRT = 0
+    "    mov rax, qword ptr [rip + LAPIC_EOI_VIRT]",
+    "    mov dword ptr [rax], 0",
+    "    mov rdi, rsp",
+    "    call timer_irq_inner",
+    "    test rax, rax",
+    "    jz 1f",
+    "    mov rdi, rax",
+    "    jmp context_restore_to",
+    "1:",
+    "    pop r15",
+    "    pop r14",
+    "    pop r13",
+    "    pop r12",
+    "    pop r11",
+    "    pop r10",
+    "    pop r9",
+    "    pop r8",
+    "    pop rdi",
+    "    pop rsi",
+    "    pop rbp",
+    "    pop rbx",
+    "    pop rdx",
+    "    pop rcx",
+    "    pop rax",
+    "    iretq",
+    ".att_syntax prefix",
+);
+
+extern "C" {
+    pub fn lapic_timer_interrupt_naked();
+}
+
 const PIC1_COMMAND: u16 = 0x20;
 const PIC1_DATA: u16 = 0x21;
 const PIC2_COMMAND: u16 = 0xA0;
@@ -191,6 +251,13 @@ fn init_idt_staged(stage: u8) {
             unsafe {
                 idt[TIMER_IRQ_VECTOR]
                     .set_handler_addr(VirtAddr::new(timer_interrupt_naked as *const () as u64));
+            }
+            // LAPIC timer (vector 0x40) — sibling naked ISR that sends LAPIC
+            // EOI instead of PIC EOI. Programmed by apic::install_lapic_timer
+            // at runtime; before that the LVT is masked so this vector is dormant.
+            unsafe {
+                idt[LAPIC_TIMER_VECTOR]
+                    .set_handler_addr(VirtAddr::new(lapic_timer_interrupt_naked as *const () as u64));
             }
             // Keyboard IRQ1 (vector 0x21) — handler dispatches to KEYBOARD_HANDLER fn-ptr.
             idt[PIC_MASTER_VECTOR_OFFSET + 1]
@@ -385,6 +452,21 @@ fn unmask_timer_irq() {
     let master_mask = inb(PIC1_DATA);
     outb(PIC1_DATA, master_mask & !0x01);
 }
+
+/// Mask the legacy PIT-driven IRQ0 on the PIC. Used when switching to the
+/// LAPIC timer as the tick source.
+pub fn mask_pit_irq() {
+    let master_mask = inb(PIC1_DATA);
+    outb(PIC1_DATA, master_mask | 0x01);
+}
+
+/// Re-unmask IRQ0 — restores the PIT as the tick source.
+pub fn restore_pit_irq() {
+    unmask_timer_irq();
+}
+
+/// Vector for the LAPIC timer ISR (just above the legacy PIC range).
+pub const LAPIC_TIMER_VECTOR: u8 = 0x40;
 
 /// Unmask IRQ1 (PS/2 keyboard) on the PIC master.
 pub fn unmask_keyboard_irq() {
