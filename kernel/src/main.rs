@@ -107,6 +107,8 @@ pub extern "C" fn kmain() -> ! {
         serial::write_line("");
     }
 
+    arch::x86_64::apic::log_summary();
+
     if !boot::protocol::limine_revision_supported() {
         console::log("kernel: unsupported limine revision");
         arch::x86_64::halt::halt_loop();

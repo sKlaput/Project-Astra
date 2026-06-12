@@ -4,6 +4,7 @@ pub mod halt;
 pub mod interrupts;
 pub mod ring3;
 pub mod sysentry;
+pub mod apic;
 
 pub use gdt::{kernel_code_selector, kernel_data_selector, ring3_code_selector, ring3_data_selector};
 pub use interrupts::{uptime_ms, timer_hz, wait_until_ticks, sleep_ticks};

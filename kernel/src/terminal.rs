@@ -477,6 +477,9 @@ fn run_cmd(cmd: &str, args: &str) {
             t.push_str("  exec <prog>        - run user program (hello/gui)", TEXT_NORM);
             t.push_str("  ps                 - list processes", TEXT_NORM);
             t.push_str("  kill <pid>         - terminate process", TEXT_NORM);
+            t.push_str("  memprobe          - kernel/user isolation diagnostic", TEXT_NORM);
+            t.push_str("  memtest           - pointer-validation regression battery", TEXT_NORM);
+            t.push_str("  cpuinfo           - CPU vendor/brand, APIC, topology", TEXT_NORM);
             t.push_str("  echo <text>        - print text", TEXT_NORM);
             t.push_str("  Up/Down arrows    - command history", TEXT_NORM);
         }
@@ -621,6 +624,10 @@ fn run_cmd(cmd: &str, args: &str) {
 
         "memtest" => {
             cmd_memtest();
+        }
+
+        "cpuinfo" => {
+            cmd_cpuinfo();
         }
 
         "echo" => {
@@ -1911,6 +1918,159 @@ fn cmd_memtest() {
     line(&mut t, b"  sys_recv_msg(KERNEL_PTR)      rejects? ", dispatch(SYS_RECV_MSG, kernel_ptr, 0, 0, 0, 0, 0) == 0);
 
     t.push_str("memtest: done", TEXT_NORM);
+}
+
+fn cmd_cpuinfo() {
+    use crate::arch::x86_64::apic;
+
+    let mut t = TERM.lock();
+    t.push_str("cpuinfo: CPU and APIC discovery", TEXT_NORM);
+
+    // Vendor (12 bytes from CPUID leaf 0).
+    {
+        let v = apic::vendor_id();
+        let mut buf = [0u8; LINE_BUF];
+        let pfx = b"  vendor : ";
+        let mut p = 0usize;
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        for &b in &v[..12] {
+            if b == 0 { break; }
+            if p < LINE_BUF { buf[p] = b; p += 1; }
+        }
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    // Brand (48 bytes).
+    {
+        let br = apic::brand_string();
+        let mut buf = [0u8; LINE_BUF];
+        let pfx = b"  brand  : ";
+        let mut p = 0usize;
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        // Skip leading spaces in brand.
+        let mut start = 0usize;
+        while start < br.len() && br[start] == b' ' { start += 1; }
+        for &b in &br[start..] {
+            if b == 0 { break; }
+            if p < LINE_BUF { buf[p] = b; p += 1; }
+        }
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    // Family/Model/Stepping.
+    {
+        let (f, m, s) = apic::family_model_stepping();
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  family/model/step = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], f as u64);
+        buf[p] = b'/'; p += 1;
+        p += write_dec(&mut buf[p..], m as u64);
+        buf[p] = b'/'; p += 1;
+        p += write_dec(&mut buf[p..], s as u64);
+        let line_str = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(line_str, TEXT_NORM);
+    }
+
+    // LAPIC ID (current core).
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  current LAPIC ID    = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], apic::lapic_id() as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    // IA32_APIC_BASE breakdown.
+    let base = apic::read_apic_base();
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  APIC_BASE phys      = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_hex64(&mut buf[p..], base.phys);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    let line = |t: &mut TermState, label: &[u8], ok: bool| {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        buf[..label.len()].copy_from_slice(label); p += label.len();
+        let tail: &[u8] = if ok { b"yes" } else { b"no" };
+        let n = tail.len().min(LINE_BUF - p);
+        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, if ok { 0x66FF66 } else { TEXT_NORM });
+    };
+
+    line(&mut t, b"  APIC global enable  = ", base.global_enable);
+    line(&mut t, b"  is BSP              = ", base.is_bsp);
+    line(&mut t, b"  x2APIC supported    = ", apic::has_x2apic());
+    line(&mut t, b"  x2APIC enabled      = ", base.x2apic_enable);
+    line(&mut t, b"  APIC feature flag   = ", apic::has_apic());
+    line(&mut t, b"  invariant TSC       = ", apic::has_invariant_tsc());
+    line(&mut t, b"  long mode           = ", apic::has_long_mode());
+
+    // RSDP from Limine.
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  ACPI RSDP           = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        match crate::boot::protocol::rsdp_address() {
+            Some(addr) => { p += write_hex64(&mut buf[p..], addr as u64); }
+            None => { let m = b"<missing>"; buf[p..p+m.len()].copy_from_slice(m); p += m.len(); }
+        }
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    // Topology from Limine MP request.
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  CPUs reported       = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        match apic::topology() {
+            Some((bsp, n)) => {
+                p += write_dec(&mut buf[p..], n as u64);
+                let mid = b" (BSP LAPIC ID ";
+                buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+                p += write_dec(&mut buf[p..], bsp as u64);
+                buf[p] = b')'; p += 1;
+            }
+            None => { let m = b"<unavailable>"; buf[p..p+m.len()].copy_from_slice(m); p += m.len(); }
+        }
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    // Per-CPU table.
+    {
+        use crate::boot::protocol::CpuEntry;
+        let mut entries = [CpuEntry { acpi_id: 0, lapic_id: 0 }; 16];
+        let n = crate::boot::protocol::mp_cpus(&mut entries);
+        for i in 0..n {
+            let mut buf = [0u8; LINE_BUF];
+            let mut p = 0usize;
+            let pfx = b"    cpu acpi_id=";
+            buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+            p += write_dec(&mut buf[p..], entries[i].acpi_id as u64);
+            let mid = b" lapic_id=";
+            buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+            p += write_dec(&mut buf[p..], entries[i].lapic_id as u64);
+            let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+            t.push_str(s, TEXT_NORM);
+        }
+    }
+
+    t.push_str("cpuinfo: done", TEXT_NORM);
 }
 
 // ── App-trait wrapper ─────────────────────────────────────────────────────────

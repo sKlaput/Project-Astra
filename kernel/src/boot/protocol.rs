@@ -1,7 +1,7 @@
 use limine::memory_map::EntryType;
 use limine::request::{
-    ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker,
-    RequestsStartMarker, StackSizeRequest,
+    ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest,
+    RequestsEndMarker, RequestsStartMarker, RsdpRequest, StackSizeRequest,
 };
 use limine::BaseRevision;
 
@@ -30,6 +30,14 @@ pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MP_REQUEST: MpRequest = MpRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
@@ -166,4 +174,63 @@ pub fn framebuffer_info() -> Option<FramebufferInfo> {
 pub fn hhdm_offset() -> Option<usize> {
     let response = HHDM_REQUEST.get_response()?;
     Some(response.offset() as usize)
+}
+
+/// Returns the physical (usually firmware-mapped) address of the ACPI RSDP
+/// table reported by Limine, if available.
+pub fn rsdp_address() -> Option<usize> {
+    let response = RSDP_REQUEST.get_response()?;
+    let addr = response.address();
+    if addr == 0 { None } else { Some(addr) }
+}
+
+/// Information about a single CPU exposed by the Limine MP request.
+#[derive(Copy, Clone)]
+pub struct CpuEntry {
+    pub acpi_id: u32,
+    pub lapic_id: u32,
+}
+
+/// Summary of the multiprocessor topology reported by Limine.
+pub struct MpSummary {
+    pub bsp_lapic_id: u32,
+    pub cpu_count: usize,
+    pub x2apic: bool,
+}
+
+pub fn mp_summary() -> Option<MpSummary> {
+    let response = MP_REQUEST.get_response()?;
+    let cpus = response.cpus();
+    let flags = unsafe {
+        // ResponseFlags is bitflags-wrapped; read the raw u32 via repr(C) field offset 0.
+        // The struct layout in limine 0.5 places `flags: ResponseFlags` after the
+        // CPU count, but bitflags exposes `bits()`. Easier: just check via a const.
+        // We can't access flags() directly without the type — fall through to false.
+        let _ = response;
+        false
+    };
+    let _ = flags;
+    Some(MpSummary {
+        bsp_lapic_id: response.bsp_lapic_id(),
+        cpu_count: cpus.len(),
+        // x2APIC was not requested (RequestFlags::X2APIC unset), so always xAPIC mode.
+        x2apic: false,
+    })
+}
+
+/// Copies up to `out.len()` CPU entries into `out`, returning how many were written.
+pub fn mp_cpus(out: &mut [CpuEntry]) -> usize {
+    let response = match MP_REQUEST.get_response() {
+        Some(r) => r,
+        None => return 0,
+    };
+    let cpus = response.cpus();
+    let n = cpus.len().min(out.len());
+    for i in 0..n {
+        out[i] = CpuEntry {
+            acpi_id: cpus[i].id,
+            lapic_id: cpus[i].lapic_id,
+        };
+    }
+    n
 }
