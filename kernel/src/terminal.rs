@@ -1576,12 +1576,14 @@ fn find_body_start(data: &[u8]) -> Option<usize> {
 fn cmd_exec(args: &str) {
     let prog = args.trim();
     let (elf, prog_name): (&[u8], &'static str) = match prog {
-        "hello" => (crate::loader::HELLO_ELF, "hello"),
-        "gui"   => (crate::loader::GUI_DEMO_ELF, "gui"),
+        "hello"    => (crate::loader::HELLO_ELF, "hello"),
+        "gui"      => (crate::loader::GUI_DEMO_ELF, "gui"),
+        "nxbomb"   => (crate::loader::NXBOMB_ELF, "nxbomb"),
+        "stackbomb"=> (crate::loader::STACKBOMB_ELF, "stackbomb"),
         _ => {
             let mut t = TERM.lock();
             t.push_str("exec: unknown program", ERR_COL);
-            t.push_str("  known: hello  gui", TEXT_NORM);
+            t.push_str("  known: hello  gui  nxbomb  stackbomb", TEXT_NORM);
             return;
         }
     };
