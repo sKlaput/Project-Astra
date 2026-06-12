@@ -619,6 +619,10 @@ fn run_cmd(cmd: &str, args: &str) {
             cmd_memprobe();
         }
 
+        "memtest" => {
+            cmd_memtest();
+        }
+
         "echo" => {
             let text = if args.is_empty() { "" } else { args };
             TERM.lock().push_str(text, TEXT_NORM);
@@ -1803,6 +1807,11 @@ fn cmd_memprobe() {
     };
     line(&mut t, b"  kernel page lacks USER bit     = ", kernel_user_bit_clear);
 
+    // EFER.NXE — required for EXECUTE_DISABLE bit to be honored.
+    let efer = crate::arch::x86_64::sysentry::efer();
+    let nxe_on = (efer & (1u64 << 11)) != 0;
+    line(&mut t, b"  EFER.NXE enabled               = ", nxe_on);
+
     // Process count + currently-tracked owned frames for the running task.
     let (_entries, count) = crate::process::list_all();
     {
@@ -1814,8 +1823,72 @@ fn cmd_memprobe() {
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
     }
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  free physical frames          = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], crate::memory::frame_allocator::available_frames() as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+    {
+        let snap = crate::syscall::security_authz_snapshot();
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  syscall authz checks/denied   = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], snap.checks);
+        buf[p] = b'/'; p += 1;
+        p += write_dec(&mut buf[p..], snap.denied);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
 
     t.push_str("memprobe: done", TEXT_NORM);
+}
+
+fn cmd_memtest() {
+    use crate::memory::paging::{is_user_range, KERNEL_SPACE_BASE, USER_SPACE_LIMIT};
+    use crate::syscall::{
+        dispatch, SYS_WRITE_CONSOLE, SYS_SEND_MSG, SYS_RECV_MSG,
+        SYS_GET_FB_INFO, SYS_DRAW_TEXT,
+    };
+
+    let mut t = TERM.lock();
+    t.push_str("memtest: pointer-validation regression battery", TEXT_NORM);
+
+    let line = |t: &mut TermState, label: &[u8], pass: bool| {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        buf[..label.len().min(LINE_BUF)].copy_from_slice(&label[..label.len().min(LINE_BUF)]);
+        p += label.len().min(LINE_BUF);
+        let tail: &[u8] = if pass { b"PASS" } else { b"FAIL" };
+        let n = tail.len().min(LINE_BUF.saturating_sub(p));
+        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, if pass { 0x66FF66 } else { ERR_COL });
+    };
+
+    // Range checks (purely arithmetic, deterministic).
+    line(&mut t, b"  is_user_range(USER_LIMIT,1)   rejects? ", !is_user_range(USER_SPACE_LIMIT, 1));
+    line(&mut t, b"  is_user_range(KERNEL_BASE,1)  rejects? ", !is_user_range(KERNEL_SPACE_BASE, 1));
+    line(&mut t, b"  is_user_range(USER_LIMIT-8,16) rejects? ", !is_user_range(USER_SPACE_LIMIT - 8, 16));
+
+    // Syscall validation: each must reject and return 0 (failure sentinel).
+    // Running in kernel CR3, so user-range addresses without backing page-tables also fail.
+    let kernel_ptr = KERNEL_SPACE_BASE as u64;
+
+    line(&mut t, b"  sys_write_console(KERNEL_PTR) rejects? ", dispatch(SYS_WRITE_CONSOLE, kernel_ptr, 8, 0, 0, 0, 0) == 0);
+    line(&mut t, b"  sys_write_console(NULL)       rejects? ", dispatch(SYS_WRITE_CONSOLE, 0, 8, 0, 0, 0, 0) == 0);
+    line(&mut t, b"  sys_send_msg(KERNEL_PTR)      rejects? ", dispatch(SYS_SEND_MSG, kernel_ptr, 8, 0, 0, 0, 0) == 0);
+    line(&mut t, b"  sys_get_fb_info(KERNEL_PTR)   rejects? ", dispatch(SYS_GET_FB_INFO, kernel_ptr, 0, 0, 0, 0, 0) == 0);
+    line(&mut t, b"  sys_draw_text(KERNEL_PTR)     rejects? ", dispatch(SYS_DRAW_TEXT, kernel_ptr, 4, 0, 0, 0xFFFFFF, 0) == 0);
+
+    // recv_msg with a kernel ptr must also fail the writable check; len returned must be 0.
+    line(&mut t, b"  sys_recv_msg(KERNEL_PTR)      rejects? ", dispatch(SYS_RECV_MSG, kernel_ptr, 0, 0, 0, 0, 0) == 0);
+
+    t.push_str("memtest: done", TEXT_NORM);
 }
 
 // ── App-trait wrapper ─────────────────────────────────────────────────────────
