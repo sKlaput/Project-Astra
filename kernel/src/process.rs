@@ -130,8 +130,11 @@ fn refresh_entry_state(entry: &mut ProcessEntry) -> ProcessState {
     let scheduler_state = crate::scheduler::task_state(task_id);
 
     if scheduler_state == crate::scheduler::TaskState::Empty {
-        // Task is gone; reclaim its user address-space page-table structures.
+        // Task is gone; reclaim its user address-space resources:
+        //   1. Free leaf frames we owned (ELF pages, stack).
+        //   2. Free intermediate page-table structures and the PML4 root.
         if let Some(pml4) = crate::scheduler::take_task_user_pml4(task_id) {
+            crate::memory::user_frames::release_all(pml4);
             crate::memory::paging::destroy_user_space_root(pml4 as usize);
         }
         entry.state = ProcessState::Exited;
@@ -169,6 +172,7 @@ pub fn spawn_elf_process(
     }
 
     let frame = crate::memory::frame_allocator::allocate_frame()?;
+    crate::memory::user_frames::register(user_pml4_phys as u64, frame.start_address() as u64);
     let flags = crate::memory::paging::PageTableFlags::new(
         crate::memory::paging::PageTableFlags::PRESENT
             | crate::memory::paging::PageTableFlags::WRITABLE

@@ -180,7 +180,27 @@ fn authorize_syscall(nr: u64) -> (bool, u64) {
 }
 
 fn user_writable_range(ptr: usize, len: usize) -> bool {
+    user_range_with_flags(
+        ptr,
+        len,
+        crate::memory::paging::PageTableFlags::USER_ACCESSIBLE
+            | crate::memory::paging::PageTableFlags::WRITABLE,
+    )
+}
+
+fn user_readable_range(ptr: usize, len: usize) -> bool {
+    user_range_with_flags(
+        ptr,
+        len,
+        crate::memory::paging::PageTableFlags::USER_ACCESSIBLE,
+    )
+}
+
+fn user_range_with_flags(ptr: usize, len: usize, need: u64) -> bool {
     if len == 0 {
+        return false;
+    }
+    if !crate::memory::paging::is_user_range(ptr, len) {
         return false;
     }
 
@@ -197,8 +217,6 @@ fn user_writable_range(ptr: usize, len: usize) -> bool {
         let Some(entry) = (unsafe { crate::memory::paging::lookup_page_entry_current(page) }) else {
             return false;
         };
-        let need = crate::memory::paging::PageTableFlags::USER_ACCESSIBLE
-            | crate::memory::paging::PageTableFlags::WRITABLE;
         if entry & need != need {
             return false;
         }
@@ -294,7 +312,10 @@ fn sys_signal_wait_all_consume(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f
 fn sys_write_console(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     if ptr == 0 || len == 0 { return 0; }
     let byte_len = (len as usize).min(512);
-    // SAFETY: single-address-space kernel; ptr is caller-supplied and non-null.
+    if !user_readable_range(ptr as usize, byte_len) {
+        return 0;
+    }
+    // SAFETY: pointer range was validated above as user-readable.
     // We only emit printable ASCII and newline, so terminal injection is not possible.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, byte_len) };
     for &b in bytes {
@@ -324,8 +345,11 @@ fn sys_send_msg(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     if ptr == 0 || len == 0 || len > 64 {
         return 0;
     }
-    
-    // SAFETY: single-address-space kernel; ptr is caller-supplied and non-null.
+    if !user_readable_range(ptr as usize, len as usize) {
+        return 0;
+    }
+
+    // SAFETY: pointer range was validated above as user-readable.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
     
     let sender_id = crate::scheduler::current_task().map(|t| t.0).unwrap_or(0);
@@ -349,7 +373,10 @@ fn sys_recv_msg(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     }
     
     let len = msg.len;
-    // SAFETY: single-address-space kernel; ptr is caller-supplied.
+    if !user_writable_range(ptr as usize, 64) {
+        return 0;
+    }
+    // SAFETY: pointer range was validated above as user-writable.
     let buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, 64) };
     buf[..len as usize].copy_from_slice(&msg.data[..len as usize]);
     msg.len = 0; // Clear the pending message
@@ -363,7 +390,10 @@ fn sys_get_fb_info(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64
     }
     
     if let Some(info) = crate::boot::protocol::framebuffer_info() {
-        // SAFETY: single-address-space kernel; ptr is caller-supplied.
+        if !user_writable_range(ptr as usize, core::mem::size_of::<u32>() * 8) {
+            return 0;
+        }
+        // SAFETY: pointer range was validated above as user-writable.
         let buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, 8) };
         buf[0] = info.width as u32;
         buf[1] = info.height as u32;
@@ -467,8 +497,11 @@ fn sys_draw_text(ptr: u64, len: u64, x: u64, y: u64, color: u64, _f: u64) -> u64
         return 0;
     }
     let byte_len = (len as usize).min(256);
+    if !user_readable_range(ptr as usize, byte_len) {
+        return 0;
+    }
 
-    // SAFETY: single-address-space kernel; ptr is caller-supplied and non-null.
+    // SAFETY: pointer range was validated above as user-readable.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, byte_len) };
 
     let mut scratch = [0u8; 256];

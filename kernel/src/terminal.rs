@@ -615,6 +615,10 @@ fn run_cmd(cmd: &str, args: &str) {
             cmd_kill(args);
         }
 
+        "memprobe" => {
+            cmd_memprobe();
+        }
+
         "echo" => {
             let text = if args.is_empty() { "" } else { args };
             TERM.lock().push_str(text, TEXT_NORM);
@@ -1717,6 +1721,101 @@ fn write_dec(buf: &mut [u8], mut n: u64) -> usize {
     let len = (tmp.len() - pos).min(buf.len());
     buf[..len].copy_from_slice(&tmp[pos..pos + len]);
     len
+}
+
+fn write_hex64(buf: &mut [u8], n: u64) -> usize {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    if buf.len() < 18 { return 0; }
+    buf[0] = b'0';
+    buf[1] = b'x';
+    for i in 0..16 {
+        let nyb = ((n >> ((15 - i) * 4)) & 0xF) as usize;
+        buf[2 + i] = HEX[nyb];
+    }
+    18
+}
+
+fn cmd_memprobe() {
+    use crate::memory::paging::{
+        current_cr3_phys, is_user_range, is_user_virt, is_kernel_virt,
+        lookup_page_entry_current, KERNEL_SPACE_BASE, PageTableFlags, USER_SPACE_LIMIT,
+    };
+
+    let mut t = TERM.lock();
+    t.push_str("memprobe: kernel/user isolation diagnostic", TEXT_NORM);
+
+    // Constants line
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  USER_SPACE_LIMIT  = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_hex64(&mut buf[p..], USER_SPACE_LIMIT as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  KERNEL_SPACE_BASE = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_hex64(&mut buf[p..], KERNEL_SPACE_BASE as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  current CR3       = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_hex64(&mut buf[p..], current_cr3_phys() as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    // Address-space classifier checks
+    let user_addr  = 0x0000_0000_0040_0000usize;
+    let kernel_addr = KERNEL_SPACE_BASE;
+    let bad_addr   = USER_SPACE_LIMIT; // exactly the boundary, must be neither user nor a valid range
+
+    let line = |t: &mut TermState, label: &[u8], ok: bool| {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        buf[..label.len()].copy_from_slice(label); p += label.len();
+        let tail: &[u8] = if ok { b"PASS" } else { b"FAIL" };
+        let n = tail.len().min(LINE_BUF - p);
+        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, if ok { 0x66FF66 } else { ERR_COL });
+    };
+
+    line(&mut t, b"  is_user_virt(user_addr)        = ", is_user_virt(user_addr));
+    line(&mut t, b"  is_kernel_virt(kernel_addr)    = ", is_kernel_virt(kernel_addr));
+    line(&mut t, b"  !is_user_virt(kernel_addr)     = ", !is_user_virt(kernel_addr));
+    line(&mut t, b"  !is_user_range(kernel_addr,1)  = ", !is_user_range(kernel_addr, 1));
+    line(&mut t, b"  !is_user_range(bad_addr,1)     = ", !is_user_range(bad_addr, 1));
+
+    // Page-table entry checks: kernel mappings must NOT be USER_ACCESSIBLE.
+    let kernel_probe = unsafe { lookup_page_entry_current(KERNEL_SPACE_BASE + 0x1000) };
+    let kernel_user_bit_clear = match kernel_probe {
+        Some(entry) => (entry & PageTableFlags::USER_ACCESSIBLE) == 0,
+        None => true, // unmapped is also "not user-accessible"
+    };
+    line(&mut t, b"  kernel page lacks USER bit     = ", kernel_user_bit_clear);
+
+    // Process count + currently-tracked owned frames for the running task.
+    let (_entries, count) = crate::process::list_all();
+    {
+        let mut buf = [0u8; LINE_BUF];
+        let mut p = 0usize;
+        let pfx = b"  user processes tracked        = ";
+        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        p += write_dec(&mut buf[p..], count as u64);
+        let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
+        t.push_str(s, TEXT_NORM);
+    }
+
+    t.push_str("memprobe: done", TEXT_NORM);
 }
 
 // ── App-trait wrapper ─────────────────────────────────────────────────────────

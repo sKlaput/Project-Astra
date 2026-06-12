@@ -14,6 +14,7 @@ const MAX_LOAD_SEGS: usize = 4;
 
 const PT_LOAD: u32 = 1;
 const PF_W:    u32 = 2;
+const PF_X:    u32 = 1;
 const ET_EXEC: u16 = 2;
 const EM_X86_64: u16 = 62;
 
@@ -573,10 +574,18 @@ pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadErr
             .checked_add(PAGE_SIZE - 1)
             .ok_or(LoadError::UnsupportedSegmentLayout)?
             / PAGE_SIZE;
-        let writable  = (p_flags & PF_W) != 0;
+        let writable    = (p_flags & PF_W) != 0;
+        let executable  = (p_flags & PF_X) != 0;
+
+        // Enforce W^X: reject any PT_LOAD that is both writable and executable.
+        if writable && executable {
+            return Err(LoadError::UnsupportedSegmentLayout);
+        }
 
         for page_idx in 0..num_pages {
             let frame = allocate_frame().ok_or(LoadError::AllocFailed)?;
+            // Track this frame as owned by the user process for later teardown.
+            crate::memory::user_frames::register(pml4_phys as u64, frame.start_address() as u64);
 
             let mut flag_bits = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
             if writable {
