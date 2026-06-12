@@ -153,7 +153,9 @@ pub fn spawn_elf_process(
         return None;
     }
 
-    let entry_rip = crate::loader::load_elf(elf_image).ok()?;
+    let user_pml4_phys = crate::memory::paging::clone_kernel_space_root()?;
+
+    let entry_rip = crate::loader::load_elf_into_pml4(elf_image, user_pml4_phys).ok()?;
 
     if user_stack_virt % crate::memory::paging::PAGE_SIZE != 0 {
         return None;
@@ -169,7 +171,7 @@ pub fn spawn_elf_process(
             | crate::memory::paging::PageTableFlags::USER_ACCESSIBLE,
     );
     unsafe {
-        crate::memory::paging::map_page_current(user_stack_virt, frame.start_address(), flags).ok()?;
+        crate::memory::paging::map_page_in_pml4(user_pml4_phys, user_stack_virt, frame.start_address(), flags).ok()?;
     }
 
     let user_rsp = user_stack_virt as u64 + crate::memory::paging::PAGE_SIZE as u64 - 8;
@@ -181,6 +183,11 @@ pub fn spawn_elf_process(
         priority,
         name,
     )?;
+
+    if !crate::scheduler::set_task_user_pml4(task_id, user_pml4_phys as u64) {
+        crate::scheduler::exit_task(task_id);
+        return None;
+    }
 
     register_process(name, task_id)
 }

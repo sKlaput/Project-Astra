@@ -162,6 +162,17 @@ impl PageTableManager {
         PageTableManager { pml4 }
     }
 
+    /// Create a page table manager from an explicit PML4 physical address.
+    ///
+    /// # Safety
+    /// Caller must ensure exclusive access to page table mutation while using
+    /// this manager.
+    pub unsafe fn from_pml4_phys(pml4_phys: usize) -> Self {
+        let pml4_virt = (pml4_phys & 0x000f_ffff_ffff_f000) + hhdm_offset();
+        let pml4 = unsafe { &mut *(pml4_virt as *mut PageTable) };
+        PageTableManager { pml4 }
+    }
+
     /// Get the physical address of the PML4
     pub fn pml4_address(&self) -> usize {
         (self.pml4 as *const _ as usize) - hhdm_offset()
@@ -430,6 +441,67 @@ pub unsafe fn map_page_current(
         }
     }
     result
+}
+
+/// Read the currently active CR3 physical base (PML4 address).
+pub fn current_cr3_phys() -> usize {
+    let mut cr3_phys: usize;
+    unsafe {
+        asm!("mov {}, cr3", out(reg) cr3_phys, options(nomem, nostack, preserves_flags));
+    }
+    cr3_phys & 0x000f_ffff_ffff_f000
+}
+
+/// Switch the active CR3 to `pml4_phys`.
+///
+/// # Safety
+/// Caller must ensure `pml4_phys` points to a valid, live top-level page table.
+pub unsafe fn switch_cr3(pml4_phys: usize) {
+    let root = pml4_phys & 0x000f_ffff_ffff_f000;
+    unsafe {
+        asm!("mov cr3, {}", in(reg) root, options(nostack, preserves_flags));
+    }
+}
+
+/// Map a single 4 KiB page in the provided page-table root.
+///
+/// Does not invalidate TLB entries because this root may not be active.
+///
+/// # Safety
+/// Caller must ensure the root is valid and there is no concurrent page-table mutation.
+pub unsafe fn map_page_in_pml4(
+    pml4_phys: usize,
+    virt: usize,
+    phys: usize,
+    flags: PageTableFlags,
+) -> Result<(), &'static str> {
+    let mut manager = unsafe { PageTableManager::from_pml4_phys(pml4_phys) };
+    unsafe { manager.map_page(virt, phys, flags) }
+}
+
+/// Clone the current kernel mappings into a fresh PML4.
+///
+/// Lower half (entries 0..=255) is left empty for per-process user mappings.
+/// Upper half (entries 256..=511) is copied from the currently active root.
+pub fn clone_kernel_space_root() -> Option<usize> {
+    let frame = allocate_frame()?;
+    let new_pml4_phys = frame.start_address();
+    let new_pml4_virt = new_pml4_phys + hhdm_offset();
+    let cur_pml4_phys = current_cr3_phys();
+    let cur_pml4_virt = cur_pml4_phys + hhdm_offset();
+
+    // SAFETY: both pointers reference page-table frames in HHDM.
+    unsafe {
+        let new_pml4 = &mut *(new_pml4_virt as *mut PageTable);
+        let cur_pml4 = &*(cur_pml4_virt as *const PageTable);
+
+        new_pml4.clear();
+        for i in 256..PAGE_TABLE_ENTRIES {
+            new_pml4.set_entry(i, cur_pml4.entry(i));
+        }
+    }
+
+    Some(new_pml4_phys)
 }
 
 /// Look up the current leaf entry bits for a 4 KiB mapping in the active page tables.

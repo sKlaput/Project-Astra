@@ -111,6 +111,14 @@ fn user_task_trampoline() {
             continue;
         };
 
+        let Some(user_pml4) = get_task_user_pml4(id) else {
+            exit_task(id);
+            continue;
+        };
+
+        // Switch to the task's user address space before SYSRET to ring-3.
+        unsafe { crate::memory::paging::switch_cr3(user_pml4 as usize) };
+
         let user_cs = crate::arch::x86_64::gdt::ring3_code_selector().0 as u64;
         let user_ss = crate::arch::x86_64::gdt::ring3_data_selector().0 as u64;
         let mut rflags: u64;
@@ -123,6 +131,8 @@ fn user_task_trampoline() {
         unsafe {
             crate::arch::x86_64::ring3::enter_user_mode(entry_rip, user_rsp, user_cs, user_ss, user_rflags);
         }
+        // Back in kernel context after int3/syscall return path.
+        unsafe { crate::memory::paging::switch_cr3(kernel_pml4_phys()) };
         // The int3 resume path bypasses a normal x86-interrupt return, so make
         // sure timer IRQs are re-enabled before the task sleeps again.
         unsafe {
@@ -249,11 +259,27 @@ static TASK_TABLE_USER_ENTRY_RIP: [AtomicU64; TABLE_CAP] = [
 static TASK_TABLE_USER_RSP: [AtomicU64; TABLE_CAP] = [
     const { AtomicU64::new(0) }; TABLE_CAP
 ];
+static TASK_TABLE_USER_PML4: [AtomicU64; TABLE_CAP] = [
+    const { AtomicU64::new(0) }; TABLE_CAP
+];
+
+// Kernel CR3 root captured once and reused when returning from user execution.
+static KERNEL_PML4_PHYS: AtomicU64 = AtomicU64::new(0);
 
 /// Size of each task stack in bytes.  Must be a multiple of 16.
 const TASK_STACK_SIZE: usize = 8192;
 
 fn table_slot(id: TaskId) -> usize { (id.0 as usize) % TABLE_CAP }
+
+fn kernel_pml4_phys() -> usize {
+    let cached = KERNEL_PML4_PHYS.load(Ordering::Acquire);
+    if cached != 0 {
+        return cached as usize;
+    }
+    let cur = crate::memory::paging::current_cr3_phys();
+    let _ = KERNEL_PML4_PHYS.compare_exchange(0, cur as u64, Ordering::AcqRel, Ordering::Acquire);
+    KERNEL_PML4_PHYS.load(Ordering::Acquire) as usize
+}
 
 fn set_task_state(id: TaskId, state: TaskState) {
     let slot = table_slot(id);
@@ -343,6 +369,7 @@ fn clear_task_state(id: TaskId) {
     TASK_TABLE_USER_STACK_VIRT[slot].store(0, Ordering::Relaxed);
     TASK_TABLE_USER_ENTRY_RIP[slot].store(0, Ordering::Relaxed);
     TASK_TABLE_USER_RSP[slot].store(0, Ordering::Relaxed);
+    TASK_TABLE_USER_PML4[slot].store(0, Ordering::Relaxed);
 }
 
 pub fn task_state(id: TaskId) -> TaskState {
@@ -638,6 +665,10 @@ pub fn exit_task(id: TaskId) {
 /// The exception handler MUST NOT execute `iretq` after this call.
 /// Never returns.
 pub fn abort_current_user_task_from_fault() -> ! {
+    // Fault handlers may resume scheduler directly; restore kernel address
+    // space first so scheduler/core kernel paths do not run under user CR3.
+    unsafe { crate::memory::paging::switch_cr3(kernel_pml4_phys()) };
+
     if let Some(id) = current_task() {
         STAT_EXIT_COUNT.fetch_add(1, Ordering::Relaxed);
         CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
@@ -744,6 +775,19 @@ pub fn set_task_user_mode(id: TaskId, code_virt: u64, stack_virt: u64, entry_rip
     TASK_TABLE_USER_STACK_VIRT[slot].store(stack_virt, Ordering::Relaxed);
     TASK_TABLE_USER_ENTRY_RIP[slot].store(entry_rip, Ordering::Relaxed);
     TASK_TABLE_USER_RSP[slot].store(user_rsp, Ordering::Relaxed);
+    // Backward-compatible default: user task uses current address space unless
+    // explicitly assigned a dedicated CR3 root by process spawning code.
+    TASK_TABLE_USER_PML4[slot].store(crate::memory::paging::current_cr3_phys() as u64, Ordering::Relaxed);
+    true
+}
+
+/// Register the page-table root (CR3 PML4 physical address) for a user task.
+pub fn set_task_user_pml4(id: TaskId, pml4_phys: u64) -> bool {
+    let slot = table_slot(id);
+    if TASK_TABLE_ID[slot].load(Ordering::Relaxed) != id.0 {
+        return false;
+    }
+    TASK_TABLE_USER_PML4[slot].store(pml4_phys, Ordering::Relaxed);
     true
 }
 
@@ -765,6 +809,18 @@ pub fn get_task_user_entry(id: TaskId) -> Option<(u64, u64)> {
         let user_rsp = TASK_TABLE_USER_RSP[slot].load(Ordering::Relaxed);
         if entry_rip != 0 && user_rsp != 0 {
             return Some((entry_rip, user_rsp));
+        }
+    }
+    None
+}
+
+/// Get the user task CR3 root physical address for `id`.
+pub fn get_task_user_pml4(id: TaskId) -> Option<u64> {
+    let slot = table_slot(id);
+    if TASK_TABLE_ID[slot].load(Ordering::Relaxed) == id.0 {
+        let p = TASK_TABLE_USER_PML4[slot].load(Ordering::Relaxed);
+        if p != 0 {
+            return Some(p);
         }
     }
     None

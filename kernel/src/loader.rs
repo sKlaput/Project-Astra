@@ -439,12 +439,20 @@ pub enum LoadError {
 /// The virtual address ranges claimed by PT_LOAD segments must not overlap
 /// existing mappings, and no concurrent page-table mutation may occur.
 pub fn load_elf(bytes: &[u8]) -> Result<u64, LoadError> {
+    let pml4_phys = crate::memory::paging::current_cr3_phys();
+    load_elf_into_pml4(bytes, pml4_phys)
+}
+
+/// Load an ELF image into the provided page-table root.
+///
+/// Returns the entry-point virtual address (`e_entry`) on success.
+pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadError> {
     use crate::memory::frame_allocator::allocate_frame;
     use crate::memory::paging::{
         hhdm_offset,
         is_user_range,
         is_user_virt,
-        map_page_current,
+        map_page_in_pml4,
         PageTableFlags,
         PAGE_SIZE,
     };
@@ -586,7 +594,7 @@ pub fn load_elf(bytes: &[u8]) -> Result<u64, LoadError> {
 
             // SAFETY: caller guarantees no overlap with existing mappings.
             unsafe {
-                map_page_current(virt_page, frame.start_address(), flags)
+                map_page_in_pml4(pml4_phys, virt_page, frame.start_address(), flags)
                     .map_err(|_| LoadError::MapFailed)?;
             }
 
