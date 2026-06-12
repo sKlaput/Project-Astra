@@ -826,6 +826,17 @@ pub fn get_task_user_pml4(id: TaskId) -> Option<u64> {
     None
 }
 
+/// Atomically take ownership of the user PML4 root for `id`.
+/// Returns the previous root and clears the slot to 0.
+pub fn take_task_user_pml4(id: TaskId) -> Option<u64> {
+    let slot = table_slot(id);
+    if TASK_TABLE_ID[slot].load(Ordering::Relaxed) != id.0 {
+        return None;
+    }
+    let p = TASK_TABLE_USER_PML4[slot].swap(0, Ordering::AcqRel);
+    if p == 0 { None } else { Some(p) }
+}
+
 /// Put the currently running task to sleep for `ticks` scheduler ticks.
 /// Returns false when there is no current task context.
 pub fn sleep_current_for_ticks(ticks: u64) -> bool {

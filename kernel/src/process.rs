@@ -130,6 +130,10 @@ fn refresh_entry_state(entry: &mut ProcessEntry) -> ProcessState {
     let scheduler_state = crate::scheduler::task_state(task_id);
 
     if scheduler_state == crate::scheduler::TaskState::Empty {
+        // Task is gone; reclaim its user address-space page-table structures.
+        if let Some(pml4) = crate::scheduler::take_task_user_pml4(task_id) {
+            crate::memory::paging::destroy_user_space_root(pml4 as usize);
+        }
         entry.state = ProcessState::Exited;
         if entry.exit_tick == 0 {
             entry.exit_tick = crate::scheduler::ticks();

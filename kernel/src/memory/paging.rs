@@ -1,4 +1,5 @@
 use crate::memory::frame_allocator::allocate_frame;
+use crate::memory::frame_allocator::deallocate_frame;
 use crate::memory::frame_allocator::Frame;
 use core::arch::asm;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -542,5 +543,77 @@ pub unsafe fn lookup_page_entry_current(virt: usize) -> Option<u64> {
         None
     } else {
         Some(pt_entry)
+    }
+}
+
+/// Reclaim page-table structure frames for a user-space root.
+///
+/// This safely frees only paging-structure frames for the lower-half user
+/// address space (PML4 entries 0..=255) plus the PML4 root itself.
+/// Mapped leaf physical frames are not deallocated here because some user
+/// mappings may intentionally alias shared kernel-managed memory (e.g. the
+/// framebuffer window).
+pub fn destroy_user_space_root(pml4_phys: usize) {
+    const ADDR_MASK: u64 = 0x000f_ffff_ffff_f000;
+
+    unsafe fn free_pt_phys(pt_phys: usize) {
+        let pt = unsafe { &mut *((pt_phys + hhdm_offset()) as *mut PageTable) };
+        pt.clear();
+        deallocate_frame(Frame::from_address(pt_phys));
+    }
+
+    unsafe fn free_pdt_phys(pdt_phys: usize) {
+        let pdt = unsafe { &mut *((pdt_phys + hhdm_offset()) as *mut PageTable) };
+        for i in 0..PAGE_TABLE_ENTRIES {
+            let entry = pdt.entry(i);
+            if entry & PageTableFlags::PRESENT == 0 {
+                continue;
+            }
+            // If not a huge page, this entry points to a PT we own.
+            if entry & PageTableFlags::HUGE_PAGE == 0 {
+                let pt_phys = (entry & ADDR_MASK) as usize;
+                unsafe { free_pt_phys(pt_phys); }
+            }
+            pdt.set_entry(i, 0);
+        }
+        deallocate_frame(Frame::from_address(pdt_phys));
+    }
+
+    unsafe fn free_pdpt_phys(pdpt_phys: usize) {
+        let pdpt = unsafe { &mut *((pdpt_phys + hhdm_offset()) as *mut PageTable) };
+        for i in 0..PAGE_TABLE_ENTRIES {
+            let entry = pdpt.entry(i);
+            if entry & PageTableFlags::PRESENT == 0 {
+                continue;
+            }
+            // If not a huge page, this entry points to a PDT we own.
+            if entry & PageTableFlags::HUGE_PAGE == 0 {
+                let pdt_phys = (entry & ADDR_MASK) as usize;
+                unsafe { free_pdt_phys(pdt_phys); }
+            }
+            pdpt.set_entry(i, 0);
+        }
+        deallocate_frame(Frame::from_address(pdpt_phys));
+    }
+
+    let root = pml4_phys & 0x000f_ffff_ffff_f000;
+    if root == 0 {
+        return;
+    }
+
+    // SAFETY: `root` is assumed to be a valid PML4 frame owned by the user task.
+    unsafe {
+        let pml4 = &mut *((root + hhdm_offset()) as *mut PageTable);
+        // Lower-half entries only (user space).
+        for i in 0..256 {
+            let entry = pml4.entry(i);
+            if entry & PageTableFlags::PRESENT == 0 {
+                continue;
+            }
+            let pdpt_phys = (entry & ADDR_MASK) as usize;
+            free_pdpt_phys(pdpt_phys);
+            pml4.set_entry(i, 0);
+        }
+        deallocate_frame(Frame::from_address(root));
     }
 }
