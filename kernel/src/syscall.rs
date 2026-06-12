@@ -318,13 +318,15 @@ fn sys_write_console(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> 
     // SAFETY: pointer range was validated above as user-readable.
     // We only emit printable ASCII and newline, so terminal injection is not possible.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, byte_len) };
-    for &b in bytes {
-        if b == b'\n' || (b >= 0x20 && b < 0x7F) {
-            // Single-byte ASCII is always valid UTF-8.
-            let s = unsafe { core::str::from_utf8_unchecked(core::slice::from_ref(&b)) };
-            crate::serial::write_str(s);
+    crate::arch::x86_64::cpu::with_user_access(|| {
+        for &b in bytes {
+            if b == b'\n' || (b >= 0x20 && b < 0x7F) {
+                // Single-byte ASCII is always valid UTF-8.
+                let s = unsafe { core::str::from_utf8_unchecked(core::slice::from_ref(&b)) };
+                crate::serial::write_str(s);
+            }
         }
-    }
+    });
     0
 }
 
@@ -356,7 +358,9 @@ fn sys_send_msg(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     let mut msg = PENDING_MESSAGE.lock();
     msg.sender_task = sender_id;
     msg.len = len;
-    msg.data[..len as usize].copy_from_slice(bytes);
+    crate::arch::x86_64::cpu::with_user_access(|| {
+        msg.data[..len as usize].copy_from_slice(bytes);
+    });
     drop(msg);
     
     1
@@ -378,7 +382,9 @@ fn sys_recv_msg(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     }
     // SAFETY: pointer range was validated above as user-writable.
     let buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, 64) };
-    buf[..len as usize].copy_from_slice(&msg.data[..len as usize]);
+    crate::arch::x86_64::cpu::with_user_access(|| {
+        buf[..len as usize].copy_from_slice(&msg.data[..len as usize]);
+    });
     msg.len = 0; // Clear the pending message
     
     len
@@ -395,10 +401,12 @@ fn sys_get_fb_info(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64
         }
         // SAFETY: pointer range was validated above as user-writable.
         let buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, 8) };
-        buf[0] = info.width as u32;
-        buf[1] = info.height as u32;
-        buf[2] = info.pitch as u32;
-        buf[3] = info.bpp as u32;
+        crate::arch::x86_64::cpu::with_user_access(|| {
+            buf[0] = info.width as u32;
+            buf[1] = info.height as u32;
+            buf[2] = info.pitch as u32;
+            buf[3] = info.bpp as u32;
+        });
         1
     } else {
         0
@@ -506,12 +514,14 @@ fn sys_draw_text(ptr: u64, len: u64, x: u64, y: u64, color: u64, _f: u64) -> u64
 
     let mut scratch = [0u8; 256];
     let mut out = 0usize;
-    for &b in bytes {
-        if b == b'\n' || (b >= 0x20 && b < 0x7F) {
-            scratch[out] = b;
-            out += 1;
+    crate::arch::x86_64::cpu::with_user_access(|| {
+        for &b in bytes {
+            if b == b'\n' || (b >= 0x20 && b < 0x7F) {
+                scratch[out] = b;
+                out += 1;
+            }
         }
-    }
+    });
     if out == 0 {
         return 0;
     }
@@ -539,8 +549,10 @@ fn sys_map_fb(out_ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 
 
     // SAFETY: single-address-space kernel; pointer provided by caller.
     let out = unsafe { core::slice::from_raw_parts_mut(out_ptr as *mut u64, 2) };
-    out[0] = virt_base;
-    out[1] = byte_len;
+    crate::arch::x86_64::cpu::with_user_access(|| {
+        out[0] = virt_base;
+        out[1] = byte_len;
+    });
     1
 }
 

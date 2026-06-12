@@ -30,6 +30,29 @@ const CR4_SMEP: u64 = 1 << 20;
 #[allow(dead_code)]
 const CR4_SMAP: u64 = 1 << 21;
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static SMAP_ENABLED: AtomicBool = AtomicBool::new(false);
+
+#[inline(always)]
+pub fn smap_enabled() -> bool {
+    SMAP_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Temporarily allow kernel access to user-mapped pages. Wraps the closure
+/// in STAC/CLAC if SMAP is active, otherwise calls the closure directly.
+#[inline(always)]
+pub fn with_user_access<R, F: FnOnce() -> R>(f: F) -> R {
+    if SMAP_ENABLED.load(Ordering::Relaxed) {
+        unsafe { core::arch::asm!("stac", options(nostack, preserves_flags)); }
+        let r = f();
+        unsafe { core::arch::asm!("clac", options(nostack, preserves_flags)); }
+        r
+    } else {
+        f()
+    }
+}
+
 #[derive(Copy, Clone, Default)]
 pub struct CpuidLeaf7 {
     pub ebx: u32,
@@ -92,18 +115,17 @@ pub fn cr4() -> u64 {
 fn enable_kernel_protections() {
     let leaf7 = cpuid_leaf7();
     let smep = (leaf7.ebx & (1 << 7)) != 0;
+    let smap = (leaf7.ebx & (1 << 20)) != 0;
     let umip = (leaf7.ecx & (1 << 2)) != 0;
 
-    // CR0.WP — make ring 0 writes respect the read-only PTE bit.
-    // Always safe to set; usually already on after Limine, but be explicit.
+    // CR0.WP — make ring 0 writes respect the read-only PTE bit. Always safe.
     // CR4.SMEP — supervisor-mode execution prevention; ring 0 cannot fetch
-    // from user pages. Safe because the kernel never jumps to user code in
-    // ring 0; SYSRET/IRET transition to CPL=3 first.
-    // CR4.UMIP — block ring 3 from reading GDTR/IDTR/LDTR/TR/CR0 with
-    // SGDT/SIDT/SLDT/STR/SMSW. Defense-in-depth against KASLR-like leaks.
-    // CR4.SMAP intentionally left off — the kernel still reads user buffers
-    // directly via `from_raw_parts`; enabling SMAP would require STAC/CLAC
-    // wrappers around every such access. Tracked separately.
+    //   from user pages. Safe; kernel never executes user pages directly.
+    // CR4.UMIP — block ring 3 from leaking GDTR/IDTR/LDTR/TR/CR0 via SGDT/
+    //   SIDT/SLDT/STR/SMSW. Defense-in-depth.
+    // CR4.SMAP — supervisor-mode access prevention; ring 0 cannot read/write
+    //   user pages unless EFLAGS.AC=1. The kernel uses cpu::with_user_access
+    //   to bracket every legitimate user-buffer access with STAC/CLAC.
     unsafe {
         core::arch::asm!(
             "mov rax, cr0",
@@ -117,6 +139,7 @@ fn enable_kernel_protections() {
         let mut cr4_or: u64 = 0;
         if smep { cr4_or |= CR4_SMEP; }
         if umip { cr4_or |= CR4_UMIP; }
+        if smap { cr4_or |= CR4_SMAP; }
         if cr4_or != 0 {
             core::arch::asm!(
                 "mov rax, cr4",
@@ -127,5 +150,11 @@ fn enable_kernel_protections() {
                 options(nostack),
             );
         }
+    }
+
+    if smap {
+        // After enabling SMAP, EFLAGS.AC starts at 0; ensure CLAC just in case.
+        unsafe { core::arch::asm!("clac", options(nostack, preserves_flags)); }
+        SMAP_ENABLED.store(true, Ordering::Relaxed);
     }
 }
