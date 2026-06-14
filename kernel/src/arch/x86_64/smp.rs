@@ -102,6 +102,7 @@ unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
     // Incremental AP bring-up stage: initialize CPU feature state, publish a
     // handshake marker, then park. Higher-level per-core init comes next.
     cpu::early_init();
+    interrupts::init_ap_interrupts();
     let current_lapic = apic::lapic_id();
     let mismatch = (current_lapic != cpu.lapic_id) as u64;
 
