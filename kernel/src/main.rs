@@ -162,8 +162,8 @@ pub extern "C" fn kmain() -> ! {
 
     // Execute boot phases in sequence
     boot_phases::phase_e1_e2_core();
-    boot_phases::phase_e2_e3_scheduler();
     arch::x86_64::smp::init();
+    boot_phases::phase_e2_e3_scheduler();
     // Note: phase_e4_e9 ring3 probes crash (GPF) with current binary layout.
     // Skip for now — desktop compositor doesn't require ring3.
     // boot_phases::phase_e4_e9_syscall_user();

@@ -3,13 +3,15 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use limine::mp::Cpu;
 
 use crate::{
-    arch::x86_64::{apic, cpu, gdt, halt, interrupts},
+    arch::x86_64::{halt, interrupts},
     boot::protocol,
     serial,
 };
 
 static AP_BOOTSTRAP_ARMED: AtomicBool = AtomicBool::new(false);
 static AP_STARTED: AtomicUsize = AtomicUsize::new(0);
+const AP_EXTRA_VALID_BIT: u64 = 1u64 << 63;
+const AP_BOOT_WAIT_MS: u64 = 1500;
 
 /// Bring up application processors using Limine's MP request and park them
 /// in a simple HLT loop for now.
@@ -34,6 +36,7 @@ pub fn init() {
         if cpu.lapic_id == bsp_lapic_id {
             continue;
         }
+        cpu.extra.store(0, Ordering::SeqCst);
         cpu.goto_address.write(ap_entry);
         ap_count += 1;
     }
@@ -48,7 +51,7 @@ pub fn init() {
     serial::write_line("");
 
     let start_ms = interrupts::uptime_ms();
-    let deadline_ms = start_ms.saturating_add(250);
+    let deadline_ms = start_ms.saturating_add(AP_BOOT_WAIT_MS);
     while AP_STARTED.load(Ordering::Relaxed) < ap_count && interrupts::uptime_ms() < deadline_ms {
         core::hint::spin_loop();
     }
@@ -63,22 +66,38 @@ pub fn init() {
     } else {
         serial::write_line(" partial");
     }
+
+    let mut handshakes = 0usize;
+    for cpu in cpus {
+        if cpu.lapic_id == bsp_lapic_id {
+            continue;
+        }
+        let marker = cpu.extra.load(Ordering::SeqCst);
+        if (marker & AP_EXTRA_VALID_BIT) != 0 {
+            handshakes += 1;
+        }
+    }
+
+    serial::write_str("smp: AP handshakes=");
+    serial::write_u64(handshakes as u64);
+    serial::write_str(" expected=");
+    serial::write_u64(ap_count as u64);
+    if handshakes == ap_count {
+        serial::write_line(" OK");
+    } else {
+        serial::write_line(" partial");
+    }
 }
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
-    // Keep AP bring-up minimal: establish the shared kernel tables, record
-    // the core, then park until real per-core scheduling arrives.
-    cpu::early_init();
-    gdt::init_ap();
-    interrupts::init_ap_interrupts();
-
-    let _ = apic::lapic_id();
+    // Minimal AP rendezvous path for now: publish identity then park.
+    // Per-core CPU/GDT/IDT setup will be layered in after handshake is stable.
     AP_STARTED.fetch_add(1, Ordering::Relaxed);
 
     // Publish AP identity in the Limine-owned per-CPU extra word so the BSP
     // can inspect per-core state without AP-side serial lock contention.
     cpu.extra.store(
-        ((cpu.id as u64) << 32) | (cpu.lapic_id as u64),
+        AP_EXTRA_VALID_BIT | ((cpu.id as u64) << 32) | (cpu.lapic_id as u64),
         Ordering::SeqCst,
     );
 
