@@ -96,6 +96,19 @@ pub fn init() {
     serial::write_str("smp: AP lapic-id mismatches=");
     serial::write_u64(lapic_mismatches as u64);
     serial::write_line("");
+
+    if handshakes != ap_count {
+        for cpu in cpus {
+            if cpu.lapic_id == bsp_lapic_id {
+                continue;
+            }
+            serial::write_str("smp: ap marker lapic=");
+            serial::write_u64(cpu.lapic_id as u64);
+            serial::write_str(" extra=0x");
+            serial::write_hex64(cpu.extra.load(Ordering::SeqCst));
+            serial::write_line("");
+        }
+    }
 }
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
