@@ -98,6 +98,23 @@ pub fn init() {
     crate::serial::write_line("gdt: kernel GDT + TSS + ring-3 descriptors active");
 }
 
+/// AP-safe GDT install path: same state programming as `init()` but without
+/// serial logging, to avoid cross-core lock contention during early SMP bring-up.
+pub fn init_ap() {
+    let state = gdt_state();
+
+    unsafe {
+        state.gdt.load();
+        CS::set_reg(state.code_selector);
+        SS::set_reg(state.data_selector);
+        DS::set_reg(state.data_selector);
+        ES::set_reg(state.data_selector);
+        FS::set_reg(state.data_selector);
+        GS::set_reg(state.data_selector);
+        load_tss(state.tss_selector);
+    }
+}
+
 /// Get ring-3 code selector for user-space tasks.
 pub fn ring3_code_selector() -> SegmentSelector {
     gdt_state().ring3_code_selector

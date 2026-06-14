@@ -2,6 +2,7 @@ param(
     [string]$Profile = "debug",
     [string]$LogPath = "",
     [int]$TimeoutSeconds = 0,
+    [int]$Smp = 1,
     [string[]]$CargoFeatures = @(),
     [switch]$Visual
 )
@@ -66,7 +67,7 @@ if ($Visual) {
         "-machine", "q35",
         "-cpu", "max",
         "-m", "512M",
-        "-smp", "1",
+        "-smp", "$Smp",
         "-no-reboot"
     ) + $accelArgs + @(
         "-serial", "file:$serialLogFile",
@@ -84,7 +85,7 @@ if ($Visual) {
         "-machine", "q35",
         "-cpu", "max",
         "-m", "512M",
-        "-smp", "1",
+        "-smp", "$Smp",
         "-no-reboot"
     ) + $accelArgs + @(
         "-serial", "stdio",

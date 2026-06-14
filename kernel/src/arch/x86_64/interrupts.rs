@@ -216,6 +216,18 @@ pub fn init_legacy_pic_pit() {
     }
 }
 
+/// Load the shared IDT on an application processor without touching the PIC
+/// or PIT state. The AP entry uses this after it has loaded the shared GDT.
+pub fn init_ap_interrupts() {
+    if let Some(idt) = IDT.get() {
+        idt.load();
+        return;
+    }
+
+    // Fallback path for unexpected bring-up ordering.
+    init_idt_staged(IDT_BRINGUP_STAGE);
+}
+
 fn init_idt_staged(stage: u8) {
     crate::serial::write_str("interrupts: idt stage=");
     crate::serial::write_u32(stage as u32);
