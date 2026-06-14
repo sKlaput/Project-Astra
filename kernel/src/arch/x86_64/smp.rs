@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use limine::mp::Cpu;
 
 use crate::{
-    arch::x86_64::{halt, interrupts},
+    arch::x86_64::{apic, cpu, halt, interrupts},
     boot::protocol,
     serial,
 };
@@ -11,6 +11,7 @@ use crate::{
 static AP_BOOTSTRAP_ARMED: AtomicBool = AtomicBool::new(false);
 static AP_STARTED: AtomicUsize = AtomicUsize::new(0);
 const AP_EXTRA_VALID_BIT: u64 = 1u64 << 63;
+const AP_EXTRA_LAPIC_MISMATCH_BIT: u64 = 1u64 << 62;
 const AP_BOOT_WAIT_MS: u64 = 1500;
 
 /// Bring up application processors using Limine's MP request and park them
@@ -68,6 +69,7 @@ pub fn init() {
     }
 
     let mut handshakes = 0usize;
+    let mut lapic_mismatches = 0usize;
     for cpu in cpus {
         if cpu.lapic_id == bsp_lapic_id {
             continue;
@@ -75,6 +77,9 @@ pub fn init() {
         let marker = cpu.extra.load(Ordering::SeqCst);
         if (marker & AP_EXTRA_VALID_BIT) != 0 {
             handshakes += 1;
+        }
+        if (marker & AP_EXTRA_LAPIC_MISMATCH_BIT) != 0 {
+            lapic_mismatches += 1;
         }
     }
 
@@ -87,17 +92,29 @@ pub fn init() {
     } else {
         serial::write_line(" partial");
     }
+
+    serial::write_str("smp: AP lapic-id mismatches=");
+    serial::write_u64(lapic_mismatches as u64);
+    serial::write_line("");
 }
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
-    // Minimal AP rendezvous path for now: publish identity then park.
-    // Per-core CPU/GDT/IDT setup will be layered in after handshake is stable.
+    // Incremental AP bring-up stage: initialize CPU feature state, publish a
+    // handshake marker, then park. Higher-level per-core init comes next.
+    cpu::early_init();
+    let current_lapic = apic::lapic_id();
+    let mismatch = (current_lapic != cpu.lapic_id) as u64;
+
     AP_STARTED.fetch_add(1, Ordering::Relaxed);
 
     // Publish AP identity in the Limine-owned per-CPU extra word so the BSP
     // can inspect per-core state without AP-side serial lock contention.
     cpu.extra.store(
-        AP_EXTRA_VALID_BIT | ((cpu.id as u64) << 32) | (cpu.lapic_id as u64),
+        AP_EXTRA_VALID_BIT
+            | (mismatch * AP_EXTRA_LAPIC_MISMATCH_BIT)
+            | ((cpu.id as u64) << 32)
+            | (((cpu.lapic_id as u64) & 0xFFFF) << 16)
+            | ((current_lapic as u64) & 0xFFFF),
         Ordering::SeqCst,
     );
 
