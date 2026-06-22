@@ -2,7 +2,6 @@
 /// Organized by execution phase (E-series), moving from core infrastructure
 /// to higher-level subsystem probing. Each phase is self-contained and called
 /// only once from kmain.
-
 use crate::*;
 
 /// Phase E1–E2: Core memory and scheduler boot
@@ -19,7 +18,7 @@ pub fn phase_e2_e3_scheduler() {
     probe_scheduler_ticks();
     probe_scheduler_idle_decision();
     probe_scheduler_queue_api();
-    
+
     // Task lifecycle and queue mechanics
     probe_scheduler_ring_overflow();
     probe_scheduler_task_state();
@@ -32,7 +31,7 @@ pub fn phase_e2_e3_scheduler() {
     probe_task_stress_sleep_mix();
     probe_scheduler_stats();
     probe_scheduler_stats_guard();
-    
+
     // Synchronization and signaling
     probe_spinlock();
     probe_task_signal();
@@ -94,7 +93,7 @@ pub fn phase_e12_e13_baseline() {
 /// Phase E14 and post-E14: GUI, applications, and subsystem validation
 pub fn phase_e14_poste14_gui_apps() {
     serial::write_line("=== PHASE E14+: GUI & Apps ===");
-    
+
     // Core GUI infrastructure
     probe_gui_demo();
     serial::write_str("gui: diag kernel_deep=");
@@ -102,51 +101,51 @@ pub fn phase_e14_poste14_gui_apps() {
     serial::write_str(" user_deep=");
     serial::write_u64(super::GUI_FB_USER_DEEP_PROBE as u64);
     serial::write_line("");
-    
+
     probe_gui_fb_mapping();
     if super::GUI_FB_USER_DEEP_PROBE {
         probe_gui_fb_mapping_user_task();
     } else {
         serial::write_line("gui: fb-map-user SKIP (gated)");
     }
-    
+
     // Window manager and resource models
     probe_gui_window_manager();
     probe_process_model();
     probe_driver_model();
-    
+
     // Network is still scaffolding
     probe_network_scaffold_v0();
-    
+
     // Post-E14 transition baselines
     probe_poste14_apic_transition_baseline();
     probe_poste14_storage_persistence_baseline();
     probe_poste14_packaging_signing_baseline();
-    
+
     // Real subsystem validation (NOT just flag aggregation)
     poste14_gui_probes::probe_subsystem_state_refactored();
-    
+
     // VFS and default applications
-    probe_poste14_gui_runtime_ownership_baseline();
+    poste14_gui_probes::probe_poste14_gui_runtime_ownership_baseline();
     probe_vfs();
     probe_app_terminal_v0();
     probe_app_text_editor_v0();
     probe_app_file_manager_v0();
     probe_app_settings_v0();
-    
+
     // Application lifecycle and lifecycle-adjacent GUI behavior
-    probe_poste14_gui_app_lifecycle_baseline();
-    probe_poste14_gui_runtime_composition_baseline();
-    
+    poste14_gui_probes::probe_poste14_gui_app_lifecycle_baseline();
+    poste14_gui_probes::probe_poste14_gui_runtime_composition_baseline();
+
     // Focus and input routing (core GUI responsibilities)
-    probe_poste14_gui_focus_arbitration_baseline();
-    probe_poste14_gui_input_routing_baseline();
-    probe_poste14_gui_focus_recovery_baseline();
-    
+    poste14_gui_probes::probe_poste14_gui_focus_arbitration_baseline();
+    poste14_gui_probes::probe_poste14_gui_input_routing_baseline();
+    poste14_gui_probes::probe_poste14_gui_focus_recovery_baseline();
+
     // Event ordering and recovery (documented in post-E14 spec)
-    probe_poste14_gui_event_ordering_baseline();
-    probe_poste14_gui_recovery_escalation_baseline();
-    
+    poste14_gui_probes::probe_poste14_gui_event_ordering_baseline();
+    poste14_gui_probes::probe_poste14_gui_recovery_escalation_baseline();
+
     // Extended GUI probe chain (cycles 2-5 with pattern variations)
     // This is where we run the multi-cycle health triplet variants
     run_poste14_gui_probe_chain();
@@ -154,7 +153,7 @@ pub fn phase_e14_poste14_gui_apps() {
 
 /// Run post-E14 GUI probe chain (cycles 2-5).
 /// Extracted from main.rs to keep phase orchestration clean.
-/// 
+///
 /// CONSOLIDATED: V1 baseline probes (transition_churn, escalation_cooldown, etc.) have been
 /// consolidated into a single baseline check. The original 20+ baseline probes were repeating
 /// the same health-triplet pattern with different label combinations. Now we do one consolidated
@@ -162,12 +161,12 @@ pub fn phase_e14_poste14_gui_apps() {
 fn run_poste14_gui_probe_chain() {
     // REFACTORED: Consolidated baseline validates core preconditions
     probe_poste14_gui_consolidated_baseline();
-    
+
     // REFACTORED: 24 permutation probes now use parameterized factory instead of
     // 24 individually-named functions. Replaces ~4000+ lines of boilerplate with
     // a single loop over a config table. Same functionality, no repetition.
     crate::poste14_gui_probes_refactored::run_poste14_gui_permutations_refactored();
-    
+
     // Cycles 3-5: Extended probe variations from original cycle modules
     poste14_gui_probes::run_poste14_gui_probe_chain();
 }
@@ -176,22 +175,22 @@ fn run_poste14_gui_probe_chain() {
 /// Replaces 20+ individual baseline probes that were repeating the same health-triplet pattern.
 /// This single probe validates essential GUI preconditions without the sprawl.
 fn probe_poste14_gui_consolidated_baseline() {
-    use crate::subsystem_validation;
     use crate::serial;
-    
+    use crate::subsystem_validation;
+
     let uptime_before = crate::arch::x86_64::interrupts::uptime_ms();
-    
+
     // Validate core GUI runtime preconditions
     let scheduler_ok = subsystem_validation::validate_scheduler_operational();
     let process_ok = subsystem_validation::validate_process_subsystem_present();
     let syscall_ok = subsystem_validation::validate_syscall_dispatch_safe();
     let context_switch_ok = subsystem_validation::validate_scheduler_context_switching();
-    
+
     let uptime_after = crate::arch::x86_64::interrupts::uptime_ms();
     let uptime_delta = uptime_after.saturating_sub(uptime_before);
-    
+
     let baseline_ok = scheduler_ok && process_ok && syscall_ok && context_switch_ok;
-    
+
     serial::write_str("gui: consolidated-baseline scheduler=");
     serial::write_u64(scheduler_ok as u64);
     serial::write_str(" process=");
@@ -203,7 +202,7 @@ fn probe_poste14_gui_consolidated_baseline() {
     serial::write_str(" uptime_ms=");
     serial::write_u64(uptime_delta);
     serial::write_line("");
-    
+
     serial::write_line(if baseline_ok {
         "gui: consolidated-baseline PASS"
     } else {
