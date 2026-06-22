@@ -4,17 +4,13 @@ use x86_64::registers::rflags::RFlags;
 
 use crate::*;
 
-/// Set to true to run the full heap debug ladder + churn test at boot.
-/// Leave false for normal clean boots.
-pub(crate) const HEAP_DEBUG: bool = false;
+mod heap;
+mod lapic_timer;
 
-/// When HEAP_DEBUG is true, halt execution after this ladder step.
-/// None = run all steps without halting.
-pub(crate) const HEAP_DEBUG_HALT_AFTER_STEP: Option<u8> = None;
-
-/// Set true to force one allocator failure and validate alloc-error diagnostics.
-/// This probe is expected to halt in the alloc error handler.
-pub(crate) const HEAP_ALLOC_FAILURE_PROBE: bool = false;
+pub(crate) use heap::{
+    heap_debug_ladder, probe_alloc_failure_path, HEAP_ALLOC_FAILURE_PROBE, HEAP_DEBUG,
+};
+pub(crate) use lapic_timer::probe_lapic_timer_switch;
 
 /// Guarded deeper framebuffer probe.
 /// Off by default; enable with Cargo feature `gui-fb-kernel-deep-probe`.
@@ -25,93 +21,6 @@ pub(crate) const GUI_FB_DEEP_PROBE: bool = cfg!(feature = "gui-fb-kernel-deep-pr
 pub(crate) const GUI_FB_USER_DEEP_PROBE: bool = cfg!(feature = "gui-fb-user-deep-probe");
 
 pub(crate) const NET_SCAFFOLD: bool = cfg!(feature = "net-scaffold");
-pub(crate) fn probe_lapic_timer_switch() {
-    use arch::x86_64::{apic, interrupts};
-
-    if !apic::lapic_calibrated() {
-        serial::write_line("lapic-timer: skip (not calibrated)");
-        return;
-    }
-
-    // PIT baseline: count how many ticks accumulate in ~250ms.
-    let t0_ticks = interrupts::timer_ticks();
-    let t0_ms = interrupts::uptime_ms();
-    let target_pit = t0_ms + 250;
-    while interrupts::uptime_ms() < target_pit {
-        core::hint::spin_loop();
-    }
-    let pit_delta = interrupts::timer_ticks() - t0_ticks;
-
-    if !apic::install_lapic_timer(100) {
-        serial::write_line("lapic-timer: install FAILED");
-        return;
-    }
-
-    // Cycle-bounded LAPIC measurement so a silent ISR cannot hang boot.
-    let l0_ticks = interrupts::timer_ticks();
-    let l0_ms = interrupts::uptime_ms();
-    let target_lapic = l0_ms + 250;
-    let spin_cap: u64 = 4_000_000_000;
-    let mut spins: u64 = 0;
-    let mut silent = false;
-    while interrupts::uptime_ms() < target_lapic {
-        core::hint::spin_loop();
-        spins = spins.wrapping_add(1);
-        if spins > spin_cap {
-            silent = true;
-            break;
-        }
-    }
-    let lapic_delta = interrupts::timer_ticks() - l0_ticks;
-
-    let _ = apic::uninstall_lapic_timer();
-
-    let mut buf = [0u8; 96];
-    let mut p = 0usize;
-    let prefix = b"lapic-timer: pit_delta=";
-    buf[..prefix.len()].copy_from_slice(prefix);
-    p += prefix.len();
-    p += write_dec_u64(&mut buf[p..], pit_delta);
-    let mid = b" lapic_delta=";
-    buf[p..p + mid.len()].copy_from_slice(mid);
-    p += mid.len();
-    p += write_dec_u64(&mut buf[p..], lapic_delta);
-    let tag: &[u8] = if silent {
-        b" status=SILENT"
-    } else if lapic_delta > 0
-        && (lapic_delta as i64 - pit_delta as i64).abs() <= (pit_delta as i64 / 4 + 5)
-    {
-        b" status=OK"
-    } else {
-        b" status=DIVERGED"
-    };
-    buf[p..p + tag.len()].copy_from_slice(tag);
-    p += tag.len();
-    let line = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
-    serial::write_line(line);
-}
-
-fn write_dec_u64(buf: &mut [u8], mut n: u64) -> usize {
-    if n == 0 {
-        if !buf.is_empty() {
-            buf[0] = b'0';
-            return 1;
-        }
-        return 0;
-    }
-    let mut tmp = [0u8; 20];
-    let mut i = 0;
-    while n > 0 {
-        tmp[i] = b'0' + (n % 10) as u8;
-        n /= 10;
-        i += 1;
-    }
-    let len = i.min(buf.len());
-    for j in 0..len {
-        buf[j] = tmp[i - 1 - j];
-    }
-    len
-}
 
 pub(crate) fn probe_timer_interrupts() {
     let before_ms = arch::x86_64::interrupts::uptime_ms();
@@ -7414,101 +7323,4 @@ pub(crate) fn probe_vfs() {
         mount_ok && root_ok && etc_ok && motd_lookup_ok && miss_ok && read_ok && mount_name_ok;
 
     serial::write_line(if pass { "fs: vfs PASS" } else { "fs: vfs FAIL" });
-}
-
-pub(crate) fn probe_alloc_failure_path() {
-    use alloc::vec::Vec;
-
-    serial::write_line("heap: alloc-failure probe armed");
-    memory::heap::inject_alloc_failures(1);
-
-    let mut trigger: Vec<u8> = Vec::with_capacity(64);
-    trigger.push(0xAA);
-
-    serial::write_line("heap: alloc-failure probe did not trigger");
-}
-
-pub(crate) fn heap_debug_ladder() {
-    use alloc::alloc::alloc;
-    use alloc::boxed::Box;
-    use alloc::string::String;
-    use alloc::vec::Vec;
-    use core::alloc::Layout;
-
-    console::log("heap: deterministic test ladder start");
-
-    // [HEAP-1] raw alloc
-    let layout_small = Layout::from_size_align(32, 8).unwrap();
-    let layout_aligned = Layout::from_size_align(128, 64).unwrap();
-    let ptr_small = unsafe { alloc(layout_small) };
-    let ptr_aligned = unsafe { alloc(layout_aligned) };
-    if !ptr_small.is_null() && !ptr_aligned.is_null() {
-        console::log("[HEAP-1] raw alloc OK");
-        heap_debug_maybe_halt(1);
-    } else {
-        console::log("[HEAP-1] raw alloc FAIL");
-        arch::x86_64::halt::halt_loop();
-    }
-
-    // [HEAP-2] Box
-    let boxed = Box::new(0xC0FFEE_u64);
-    if *boxed == 0xC0FFEE_u64 {
-        console::log("[HEAP-2] Box OK");
-        heap_debug_maybe_halt(2);
-    } else {
-        console::log("[HEAP-2] Box FAIL");
-        arch::x86_64::halt::halt_loop();
-    }
-
-    // [HEAP-3] Vec
-    let mut values: Vec<u32> = Vec::with_capacity(4);
-    values.push(10);
-    values.push(20);
-    values.push(30);
-    values.push(40);
-    if values.len() == 4 && values[3] == 40 {
-        console::log("[HEAP-3] Vec OK");
-        heap_debug_maybe_halt(3);
-    } else {
-        console::log("[HEAP-3] Vec FAIL");
-        arch::x86_64::halt::halt_loop();
-    }
-
-    // [HEAP-4] String
-    let mut text = String::from("heap");
-    text.push_str("-ok");
-    if text.as_str() == "heap-ok" {
-        console::log("[HEAP-4] String OK");
-        heap_debug_maybe_halt(4);
-    } else {
-        console::log("[HEAP-4] String FAIL");
-        arch::x86_64::halt::halt_loop();
-    }
-
-    // [HEAP-5] allocation churn: 200 small Box allocations
-    let mut churn_ok = true;
-    for i in 0_u64..200 {
-        let b = Box::new(i);
-        if *b != i {
-            churn_ok = false;
-            break;
-        }
-    }
-    if churn_ok {
-        console::log("[HEAP-5] churn 200x Box OK");
-        heap_debug_maybe_halt(5);
-    } else {
-        console::log("[HEAP-5] churn FAIL");
-        arch::x86_64::halt::halt_loop();
-    }
-
-    memory::heap::report_heap_status();
-    console::log("heap: debug ladder complete");
-}
-
-fn heap_debug_maybe_halt(step: u8) {
-    if HEAP_DEBUG_HALT_AFTER_STEP == Some(step) {
-        console::log("heap: temporary halt for ladder isolation");
-        arch::x86_64::halt::halt_loop();
-    }
 }
