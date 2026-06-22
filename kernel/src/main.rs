@@ -51,8 +51,6 @@ mod fat32;
 
 use core::panic::PanicInfo;
 
-pub(crate) use boot_probes::*;
-
 #[global_allocator]
 static GLOBAL_ALLOCATOR: memory::heap::KernelAllocator = memory::heap::KernelAllocator;
 
