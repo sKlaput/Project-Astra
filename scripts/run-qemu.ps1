@@ -21,6 +21,10 @@ $pflashDrive = "if=pflash,format=raw,readonly=on,file=$ovmfLocalCode"
 $dataDrive = "file=$diskImg,if=none,id=datadisk,format=raw"
 $dataDevice = "virtio-blk-pci,drive=datadisk"
 
+if (-not (Test-Path $buildDir)) {
+    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+}
+
 # Create a 64 MiB blank disk image for persistent user data if it doesn't exist yet.
 if (-not (Test-Path $diskImg)) {
     Write-Host "Creating persistent data disk at $diskImg (64 MiB)"
@@ -40,10 +44,6 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path $ovmfCode)) {
     Write-Error "Missing OVMF firmware at $ovmfCode"
     exit 1
-}
-
-if (-not (Test-Path $buildDir)) {
-    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 }
 
 Copy-Item $ovmfCode $ovmfLocalCode -Force
