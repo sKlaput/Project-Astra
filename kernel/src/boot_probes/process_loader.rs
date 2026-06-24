@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::*;
+use crate::{process, scheduler, serial};
 
 static PROCESS_MODEL_WORKER_RAN: AtomicU64 = AtomicU64::new(0);
 

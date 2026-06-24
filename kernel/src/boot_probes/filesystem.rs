@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{arch, fs, scheduler, serial};
 
 pub(crate) fn probe_poste14_storage_persistence_baseline() {
     let uptime_before = arch::x86_64::interrupts::uptime_ms();

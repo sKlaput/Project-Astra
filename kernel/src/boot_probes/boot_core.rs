@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::*;
+use crate::{arch, idle, memory, scheduler, serial, syscall};
 
 // --- task signal probe support ---
 static SIGNAL_WAITER_SAW: AtomicU64 = AtomicU64::new(0);

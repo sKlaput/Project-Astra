@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{drivers, serial};
 
 // ---------------------------------------------------------------------------
 pub(crate) fn probe_driver_model() {

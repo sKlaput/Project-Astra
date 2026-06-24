@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{net, serial};
 
 pub(crate) fn probe_network_scaffold_v0() {
     if !cfg!(feature = "net-scaffold") {
