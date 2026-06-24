@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::*;
+use crate::{arch, fs, idle, loader, memory, scheduler, serial, syscall, user};
 /// Guarded deeper framebuffer probe.
 /// Off by default; enable with Cargo feature `gui-fb-kernel-deep-probe`.
 pub(crate) const GUI_FB_DEEP_PROBE: bool = cfg!(feature = "gui-fb-kernel-deep-probe");

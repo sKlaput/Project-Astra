@@ -340,7 +340,7 @@ pub(crate) fn probe_priority_mutation() {
 
     // Spawn A, B, C all at mid priority 128 — they enter the ring in FIFO order.
     let id_a = scheduler::spawn_task_with_fn_prio_name(task_pmut_record, 128, "pmut-A").unwrap();
-    let id_b = scheduler::spawn_task_with_fn_prio_name(task_pmut_record, 128, "pmut-B").unwrap();
+    let _id_b = scheduler::spawn_task_with_fn_prio_name(task_pmut_record, 128, "pmut-B").unwrap();
     let id_c = scheduler::spawn_task_with_fn_prio_name(task_pmut_record, 128, "pmut-C").unwrap();
 
     // Verify initial priorities are all 128.

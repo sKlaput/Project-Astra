@@ -2,7 +2,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use x86_64::registers::rflags::RFlags;
 
-use crate::*;
+use crate::{arch, idle, loader, memory, scheduler, serial, syscall};
 
 static SYSCALL_SIGNAL_TARGET_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -1217,6 +1217,7 @@ pub(crate) fn probe_syscall_sysret_stack_stress() {
         emit_bytes!(&[0x4D, 0x89, 0x3C, 0x24]); // mov [r12], r15
         emit_bytes!(&[0xCC]); // int3
         emit_bytes!(&[0xEB, 0xFE]); // jmp $
+        let _ = cursor;
 
         let rel_fail = (fail_label as isize) - ((jne_fail + 2) as isize);
         let rel_loop = (loop_start as isize) - ((jnz_loop + 2) as isize);
@@ -1450,6 +1451,7 @@ pub(crate) fn probe_syscall_abi_smoke_user() {
         let success_int3 = cursor;
         emit_bytes!(&[0xCC]);
         emit_bytes!(&[0xEB, 0xFE]);
+        let _ = cursor;
         trap_expected_rip = USER_CODE_VIRT as u64 + success_int3 as u64 + 1;
 
         arch::x86_64::ring3::clear_saved_resume_rsp();

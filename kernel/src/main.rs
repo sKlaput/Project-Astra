@@ -140,11 +140,7 @@ pub extern "C" fn kmain() -> ! {
     boot_phases::phase_e1_e2_core();
     arch::x86_64::smp::init();
     boot_phases::phase_e2_e3_scheduler();
-    // Note: phase_e4_e9 ring3 probes crash (GPF) with current binary layout.
-    // Skip for now — desktop compositor doesn't require ring3.
-    // boot_phases::phase_e4_e9_syscall_user();
-    // boot_phases::phase_e12_e13_baseline();
-    // boot_phases::phase_e14_poste14_gui_apps();
+    boot_phases::run_deferred_optional_phases();
 
     // Calibrate the Local APIC timer against the PIT-driven uptime clock.
     // Read-only at this stage; the scheduler tick source is unchanged.
