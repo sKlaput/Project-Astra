@@ -13,7 +13,7 @@ pub enum ProcessState {
 }
 
 /// User-space startup ABI version contract.
-/// 
+///
 /// Version 1 (current):
 /// - Entry: ring-3 code at 0x400000 (ELF p_vaddr)
 /// - Stack: user-allocated at 0x500000+ (provided at spawn time)
@@ -75,7 +75,8 @@ pub const TABLE_CAP: usize = 16;
 const PROCESS_STARTUP_ABI_VERSION: u32 = 1;
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(1);
-static PROCESS_TABLE: Mutex<[ProcessEntry; TABLE_CAP]> = Mutex::new([ProcessEntry::empty(); TABLE_CAP]);
+static PROCESS_TABLE: Mutex<[ProcessEntry; TABLE_CAP]> =
+    Mutex::new([ProcessEntry::empty(); TABLE_CAP]);
 
 pub fn startup_abi_version() -> u32 {
     PROCESS_STARTUP_ABI_VERSION
@@ -195,7 +196,13 @@ pub fn spawn_elf_process(
         crate::memory::user_frames::register(user_pml4_phys as u64, frame.start_address() as u64);
         let virt = user_stack_virt + i * page_size;
         unsafe {
-            crate::memory::paging::map_page_in_pml4(user_pml4_phys, virt, frame.start_address(), stack_flags).ok()?;
+            crate::memory::paging::map_page_in_pml4(
+                user_pml4_phys,
+                virt,
+                frame.start_address(),
+                stack_flags,
+            )
+            .ok()?;
         }
     }
 
@@ -266,13 +273,13 @@ pub fn uptime_ticks(pid: ProcessId) -> Option<u64> {
 /// Snapshot of a single process entry for display purposes.
 #[derive(Clone, Copy)]
 pub struct ProcessInfo {
-    pub pid:        u64,
-    pub state:      ProcessState,
-    pub task_id:    u64,
+    pub pid: u64,
+    pub state: ProcessState,
+    pub task_id: u64,
     pub start_tick: u64,
     /// Up to 16 bytes of the process name (UTF-8).
-    pub name:       [u8; 16],
-    pub name_len:   usize,
+    pub name: [u8; 16],
+    pub name_len: usize,
 }
 
 impl ProcessInfo {
@@ -294,7 +301,9 @@ pub fn list_all() -> ([ProcessInfo; TABLE_CAP], usize) {
     let mut out = [ProcessInfo::empty(); TABLE_CAP];
     let mut count = 0usize;
     for entry in table.iter_mut() {
-        if entry.state == ProcessState::Empty { continue; }
+        if entry.state == ProcessState::Empty {
+            continue;
+        }
         refresh_entry_state(entry);
         let name_ptr = entry.name_ptr as *const u8;
         let name_len = (entry.name_len as usize).min(16);
@@ -324,7 +333,9 @@ pub fn count_running_user() -> usize {
     let mut table = PROCESS_TABLE.lock();
     let mut count = 0usize;
     for entry in table.iter_mut() {
-        if entry.state == ProcessState::Empty { continue; }
+        if entry.state == ProcessState::Empty {
+            continue;
+        }
         let state = refresh_entry_state(entry);
         if state == ProcessState::Running {
             // Only count entries that correspond to a user task.

@@ -100,8 +100,7 @@ pub fn register(driver: &'static dyn Driver) -> Result<usize, DriverError> {
     REGISTRY[idx].data.store(data_ptr as u64, Ordering::Release);
     REGISTRY[idx].vtbl.store(vtbl_ptr as u64, Ordering::Release);
 
-    driver.init()
-        .map(|()| idx)
+    driver.init().map(|()| idx)
 }
 
 /// Number of drivers currently registered.
@@ -115,11 +114,11 @@ pub fn for_each(mut f: impl FnMut(usize, &'static dyn Driver)) {
     for i in 0..n {
         let data = REGISTRY[i].data.load(Ordering::Acquire) as usize;
         let vtbl = REGISTRY[i].vtbl.load(Ordering::Acquire) as usize;
-        if data == 0 || vtbl == 0 { continue; }
+        if data == 0 || vtbl == 0 {
+            continue;
+        }
         // SAFETY: stored in `register()` from a valid `&'static dyn Driver`.
-        let driver: &'static dyn Driver = unsafe {
-            core::mem::transmute([data, vtbl])
-        };
+        let driver: &'static dyn Driver = unsafe { core::mem::transmute([data, vtbl]) };
         f(i, driver);
     }
 }

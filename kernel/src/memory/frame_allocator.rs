@@ -144,8 +144,7 @@ impl BitmapFrameAllocator {
 }
 
 /// Global frame allocator instance
-static FRAME_ALLOCATOR: Mutex<BitmapFrameAllocator> =
-    Mutex::new(BitmapFrameAllocator::new());
+static FRAME_ALLOCATOR: Mutex<BitmapFrameAllocator> = Mutex::new(BitmapFrameAllocator::new());
 
 /// Initialize the frame allocator with available memory regions from boot
 pub fn init_from_memory_map(regions: &[(usize, usize)]) {

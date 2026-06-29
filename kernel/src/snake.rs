@@ -10,117 +10,131 @@
 // ---------------------------------------------------------------------------
 
 use crate::app::{App, AppAction};
+use crate::arch::x86_64::interrupts::uptime_ms;
 use crate::framebuffer;
 use crate::input::Key;
-use crate::arch::x86_64::interrupts::uptime_ms;
 use core::cell::UnsafeCell;
 
 // ── Grid / layout constants ───────────────────────────────────────────────────
 
-const COLS:    usize = 24;
-const ROWS:    usize = 18;
-const CELL:    usize = 20;      // px per grid cell
-const X_OFF:   usize = 40;      // px from window left to grid left
-const Y_OFF:   usize = 44;      // px from window top  to grid top
-const WIN_W:   usize = COLS * CELL + X_OFF * 2;  // 560
-const WIN_H:   usize = ROWS * CELL + Y_OFF + 20; // 424
+const COLS: usize = 24;
+const ROWS: usize = 18;
+const CELL: usize = 20; // px per grid cell
+const X_OFF: usize = 40; // px from window left to grid left
+const Y_OFF: usize = 44; // px from window top  to grid top
+const WIN_W: usize = COLS * CELL + X_OFF * 2; // 560
+const WIN_H: usize = ROWS * CELL + Y_OFF + 20; // 424
 
-const MAX_LEN: usize = COLS * ROWS;   // 432 — max possible snake length
+const MAX_LEN: usize = COLS * ROWS; // 432 — max possible snake length
 
 // ── Timing ────────────────────────────────────────────────────────────────────
 
-const BASE_MS:   u64 = 150;   // ms between moves at speed 0
-const SPEED_INC: u64 = 8;     // ms shaved off per 5 pts (min 60ms)
-const MIN_MS:    u64 = 60;
+const BASE_MS: u64 = 150; // ms between moves at speed 0
+const SPEED_INC: u64 = 8; // ms shaved off per 5 pts (min 60ms)
+const MIN_MS: u64 = 60;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const BG:          u32 = 0x060B06;
-const GRID_LINE:   u32 = 0x0A120A;
-const BORDER:      u32 = 0x1A3A1A;
-const SNAKE_HEAD:  u32 = 0x50F870;
-const SNAKE_BODY:  u32 = 0x28A840;
-const SNAKE_DIM:   u32 = 0x1A6828;   // tail end
-const FOOD:        u32 = 0xFF4444;
-const FOOD_INNER:  u32 = 0xFF8888;
-const SCORE_COL:   u32 = 0x70E070;
-const HI_COL:      u32 = 0xE0C040;
-const TITLE_COL:   u32 = 0x40C060;
-const DIM_COL:     u32 = 0x204020;
-const OVER_BG:     u32 = 0x0C1A0C;
-const OVER_TITLE:  u32 = 0xFF6060;
-const OVER_TEXT:   u32 = 0xB0C8B0;
-const PAUSE_COL:   u32 = 0xE0D040;
-const HINT_COL:    u32 = 0x1E381E;
+const BG: u32 = 0x060B06;
+const GRID_LINE: u32 = 0x0A120A;
+const BORDER: u32 = 0x1A3A1A;
+const SNAKE_HEAD: u32 = 0x50F870;
+const SNAKE_BODY: u32 = 0x28A840;
+const SNAKE_DIM: u32 = 0x1A6828; // tail end
+const FOOD: u32 = 0xFF4444;
+const FOOD_INNER: u32 = 0xFF8888;
+const SCORE_COL: u32 = 0x70E070;
+const HI_COL: u32 = 0xE0C040;
+const TITLE_COL: u32 = 0x40C060;
+const DIM_COL: u32 = 0x204020;
+const OVER_BG: u32 = 0x0C1A0C;
+const OVER_TITLE: u32 = 0xFF6060;
+const OVER_TEXT: u32 = 0xB0C8B0;
+const PAUSE_COL: u32 = 0xE0D040;
+const HINT_COL: u32 = 0x1E381E;
 
 // ── Direction ─────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Dir { Up, Down, Left, Right }
+enum Dir {
+    Up,
+    Down,
+    Left,
+    Right,
+}
 
 impl Dir {
     fn opposite(self) -> Dir {
-        match self { Dir::Up => Dir::Down, Dir::Down => Dir::Up,
-                     Dir::Left => Dir::Right, Dir::Right => Dir::Left }
+        match self {
+            Dir::Up => Dir::Down,
+            Dir::Down => Dir::Up,
+            Dir::Left => Dir::Right,
+            Dir::Right => Dir::Left,
+        }
     }
 }
 
 // ── Game phase ────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase { Playing, Paused, GameOver, Ready }
+enum Phase {
+    Playing,
+    Paused,
+    GameOver,
+    Ready,
+}
 
 // ── Core game state (lives inside UnsafeCell) ─────────────────────────────────
 
 struct Game {
     /// Circular buffer of body segments, oldest at `tail_idx`, newest at `head_idx`.
-    body:      [(u8, u8); MAX_LEN],
-    head_idx:  usize,
-    tail_idx:  usize,
-    len:       usize,
+    body: [(u8, u8); MAX_LEN],
+    head_idx: usize,
+    tail_idx: usize,
+    len: usize,
 
-    dir:       Dir,
-    next_dir:  Dir,
-    food:      (u8, u8),
+    dir: Dir,
+    next_dir: Dir,
+    food: (u8, u8),
 
-    phase:     Phase,
-    score:     u32,
+    phase: Phase,
+    score: u32,
     high_score: u32,
 
     last_move_ms: u64,
-    rng:          u64,
+    rng: u64,
 }
 
 impl Game {
     fn new() -> Self {
         let mut g = Game {
-            body:        [(0, 0); MAX_LEN],
-            head_idx:    0,
-            tail_idx:    0,
-            len:         0,
-            dir:         Dir::Right,
-            next_dir:    Dir::Right,
-            food:        (0, 0),
-            phase:       Phase::Ready,
-            score:       0,
-            high_score:  0,
+            body: [(0, 0); MAX_LEN],
+            head_idx: 0,
+            tail_idx: 0,
+            len: 0,
+            dir: Dir::Right,
+            next_dir: Dir::Right,
+            food: (0, 0),
+            phase: Phase::Ready,
+            score: 0,
+            high_score: 0,
             last_move_ms: 0,
-            rng:         0x53_4173_7472_614F,
+            rng: 0x53_4173_7472_614F,
         };
         g.reset();
         g
     }
 
     fn reset(&mut self) {
-        self.head_idx  = 2;
-        self.tail_idx  = 0;
-        self.len       = 3;
-        self.body[0]   = (10, 9);
-        self.body[1]   = (11, 9);
-        self.body[2]   = (12, 9);
-        self.dir       = Dir::Right;
-        self.next_dir  = Dir::Right;
-        self.score     = 0;
+        self.head_idx = 2;
+        self.tail_idx = 0;
+        self.len = 3;
+        self.body[0] = (10, 9);
+        self.body[1] = (11, 9);
+        self.body[2] = (12, 9);
+        self.dir = Dir::Right;
+        self.next_dir = Dir::Right;
+        self.score = 0;
         self.last_move_ms = uptime_ms();
         self.rng ^= self.last_move_ms;
         self.place_food();
@@ -143,8 +157,8 @@ impl Game {
         let start = (self.rand() as usize) % total;
         for i in 0..total {
             let idx = (start + i) % total;
-            let fx  = (idx % COLS) as u8;
-            let fy  = (idx / COLS) as u8;
+            let fx = (idx % COLS) as u8;
+            let fy = (idx / COLS) as u8;
             if !self.body_contains(fx, fy) {
                 self.food = (fx, fy);
                 return;
@@ -157,7 +171,9 @@ impl Game {
     fn body_contains(&self, x: u8, y: u8) -> bool {
         for i in 0..self.len {
             let idx = (self.tail_idx + i) % MAX_LEN;
-            if self.body[idx] == (x, y) { return true; }
+            if self.body[idx] == (x, y) {
+                return true;
+            }
         }
         false
     }
@@ -173,7 +189,9 @@ impl Game {
 
     /// Advance the game by one tick.  Returns true if state changed.
     fn tick(&mut self) -> bool {
-        if self.phase != Phase::Playing { return false; }
+        if self.phase != Phase::Playing {
+            return false;
+        }
         let now = uptime_ms();
         if now.saturating_sub(self.last_move_ms) < self.move_speed_ms() {
             return false;
@@ -187,9 +205,9 @@ impl Game {
 
         let (hx, hy) = self.head();
         let (nx, ny) = match self.dir {
-            Dir::Up    => (hx, hy.wrapping_sub(1)),
-            Dir::Down  => (hx, hy + 1),
-            Dir::Left  => (hx.wrapping_sub(1), hy),
+            Dir::Up => (hx, hy.wrapping_sub(1)),
+            Dir::Down => (hx, hy + 1),
+            Dir::Left => (hx.wrapping_sub(1), hy),
             Dir::Right => (hx + 1, hy),
         };
 
@@ -218,7 +236,9 @@ impl Game {
 
         if ate_food {
             self.score += 1;
-            if self.score > self.high_score { self.high_score = self.score; }
+            if self.score > self.high_score {
+                self.high_score = self.score;
+            }
             self.place_food();
         } else {
             // Advance tail
@@ -245,7 +265,9 @@ unsafe impl Sync for SnakeApp {}
 
 impl SnakeApp {
     pub fn new() -> Self {
-        SnakeApp { inner: UnsafeCell::new(Game::new()) }
+        SnakeApp {
+            inner: UnsafeCell::new(Game::new()),
+        }
     }
 
     fn g(&self) -> &mut Game {
@@ -263,11 +285,21 @@ fn draw_cell(gx: usize, gy: usize, cx: usize, cy: usize, color: u32) {
 }
 
 impl App for SnakeApp {
-    fn title(&self) -> &str { "Snake" }
-    fn app_id(&self) -> &'static str { "snake" }
-    fn preferred_size(&self) -> (usize, usize) { (WIN_W, WIN_H) }
-    fn allow_multiple_instances(&self) -> bool { false }
-    fn refresh_interval_ms(&self) -> Option<u64> { Some(50) }
+    fn title(&self) -> &str {
+        "Snake"
+    }
+    fn app_id(&self) -> &'static str {
+        "snake"
+    }
+    fn preferred_size(&self) -> (usize, usize) {
+        (WIN_W, WIN_H)
+    }
+    fn allow_multiple_instances(&self) -> bool {
+        false
+    }
+    fn refresh_interval_ms(&self) -> Option<u64> {
+        Some(50)
+    }
 
     fn render(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
         let g = self.g();
@@ -280,8 +312,8 @@ impl App for SnakeApp {
         // ── Grid lines ────────────────────────────────────────────────────
         let gx0 = cx + X_OFF;
         let gy0 = cy + Y_OFF;
-        let gw  = COLS * CELL;
-        let gh  = ROWS * CELL;
+        let gw = COLS * CELL;
+        let gh = ROWS * CELL;
 
         // Vertical lines
         for col in 0..=COLS {
@@ -301,7 +333,7 @@ impl App for SnakeApp {
         for i in 0..g.len {
             let idx = (g.tail_idx + i) % MAX_LEN;
             let (bx, by) = g.body[idx];
-            let frac = i * 3 / g.len.max(1);   // 0,1,2 for dim/mid/bright
+            let frac = i * 3 / g.len.max(1); // 0,1,2 for dim/mid/bright
             let col = if i + 1 == g.len {
                 SNAKE_HEAD
             } else if frac < 1 {
@@ -325,24 +357,25 @@ impl App for SnakeApp {
         {
             let mut buf = [0u8; 32];
             let len = fmt_score(&mut buf, b"SCORE ", g.score);
-            let s   = core::str::from_utf8(&buf[..len]).unwrap_or("");
+            let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
             framebuffer::draw_text_at(cx + X_OFF, cy + 6, s, SCORE_COL);
 
             let mut hbuf = [0u8; 32];
             let hlen = fmt_score(&mut hbuf, b"BEST  ", g.high_score);
-            let hs   = core::str::from_utf8(&hbuf[..hlen]).unwrap_or("");
+            let hs = core::str::from_utf8(&hbuf[..hlen]).unwrap_or("");
             framebuffer::draw_text_at(cx + X_OFF + 140, cy + 6, hs, HI_COL);
 
-            let lvl   = (g.score / 5) + 1;
+            let lvl = (g.score / 5) + 1;
             let mut lbuf = [0u8; 32];
             let llen = fmt_score(&mut lbuf, b"LVL ", lvl);
-            let ls   = core::str::from_utf8(&lbuf[..llen]).unwrap_or("");
+            let ls = core::str::from_utf8(&lbuf[..llen]).unwrap_or("");
             framebuffer::draw_text_at(cx + X_OFF + 280, cy + 6, ls, TITLE_COL);
         }
 
         // ── Hint bar (bottom) ─────────────────────────────────────────────
         framebuffer::draw_text_at(
-            cx + X_OFF, cy + Y_OFF + gh + 5,
+            cx + X_OFF,
+            cy + Y_OFF + gh + 5,
             "ARROWS/WASD: steer   SPACE: pause   R: restart",
             HINT_COL,
         );
@@ -350,19 +383,40 @@ impl App for SnakeApp {
         // ── Overlay: Ready / Paused / Game Over ───────────────────────────
         match g.phase {
             Phase::Ready => {
-                draw_overlay(cx, cy, cw, ch,
-                    "SNAKE",         TITLE_COL,
-                    "Press any direction to start",   OVER_TEXT);
+                draw_overlay(
+                    cx,
+                    cy,
+                    cw,
+                    ch,
+                    "SNAKE",
+                    TITLE_COL,
+                    "Press any direction to start",
+                    OVER_TEXT,
+                );
             }
             Phase::Paused => {
-                draw_overlay(cx, cy, cw, ch,
-                    "PAUSED",        PAUSE_COL,
-                    "Press SPACE to resume",           OVER_TEXT);
+                draw_overlay(
+                    cx,
+                    cy,
+                    cw,
+                    ch,
+                    "PAUSED",
+                    PAUSE_COL,
+                    "Press SPACE to resume",
+                    OVER_TEXT,
+                );
             }
             Phase::GameOver => {
-                draw_overlay(cx, cy, cw, ch,
-                    "GAME OVER",     OVER_TITLE,
-                    "Press R to play again",           OVER_TEXT);
+                draw_overlay(
+                    cx,
+                    cy,
+                    cw,
+                    ch,
+                    "GAME OVER",
+                    OVER_TITLE,
+                    "Press R to play again",
+                    OVER_TEXT,
+                );
             }
             Phase::Playing => {}
         }
@@ -377,17 +431,22 @@ impl App for SnakeApp {
                 g.high_score = hi;
                 AppAction::RedrawAll
             }
-            Key::Char(b' ') => {
-                match g.phase {
-                    Phase::Playing  => { g.phase = Phase::Paused; AppAction::RedrawAll }
-                    Phase::Paused   => { g.phase = Phase::Playing; g.last_move_ms = uptime_ms(); AppAction::RedrawAll }
-                    Phase::GameOver => { AppAction::Nothing }
-                    Phase::Ready    => { AppAction::Nothing }
+            Key::Char(b' ') => match g.phase {
+                Phase::Playing => {
+                    g.phase = Phase::Paused;
+                    AppAction::RedrawAll
                 }
-            }
-            Key::ArrowUp    | Key::Char(b'w') | Key::Char(b'W') => steer(g, Dir::Up),
-            Key::ArrowDown  | Key::Char(b's') | Key::Char(b'S') => steer(g, Dir::Down),
-            Key::ArrowLeft  | Key::Char(b'a') | Key::Char(b'A') => steer(g, Dir::Left),
+                Phase::Paused => {
+                    g.phase = Phase::Playing;
+                    g.last_move_ms = uptime_ms();
+                    AppAction::RedrawAll
+                }
+                Phase::GameOver => AppAction::Nothing,
+                Phase::Ready => AppAction::Nothing,
+            },
+            Key::ArrowUp | Key::Char(b'w') | Key::Char(b'W') => steer(g, Dir::Up),
+            Key::ArrowDown | Key::Char(b's') | Key::Char(b'S') => steer(g, Dir::Down),
+            Key::ArrowLeft | Key::Char(b'a') | Key::Char(b'A') => steer(g, Dir::Left),
             Key::ArrowRight | Key::Char(b'd') | Key::Char(b'D') => steer(g, Dir::Right),
             _ => AppAction::Nothing,
         }
@@ -406,9 +465,16 @@ fn steer(g: &mut Game, d: Dir) -> AppAction {
     AppAction::Nothing
 }
 
-fn draw_overlay(cx: usize, cy: usize, cw: usize, ch: usize,
-                heading: &str, hcol: u32, body: &str, bcol: u32)
-{
+fn draw_overlay(
+    cx: usize,
+    cy: usize,
+    cw: usize,
+    ch: usize,
+    heading: &str,
+    hcol: u32,
+    body: &str,
+    bcol: u32,
+) {
     let ow = 280usize;
     let oh = 80usize;
     let ox = cx + (cw.saturating_sub(ow)) / 2;
@@ -432,7 +498,10 @@ fn draw_overlay(cx: usize, cy: usize, cw: usize, ch: usize,
 
 fn fmt_score(buf: &mut [u8; 32], prefix: &[u8], n: u32) -> usize {
     let mut i = 0usize;
-    for &b in prefix { buf[i] = b; i += 1; }
+    for &b in prefix {
+        buf[i] = b;
+        i += 1;
+    }
     let s = n.to_str_buf(buf, &mut i);
     let _ = s;
     i
@@ -445,13 +514,22 @@ trait ToStrBuf {
 impl ToStrBuf for u32 {
     fn to_str_buf(self, buf: &mut [u8; 32], i: &mut usize) -> usize {
         if self == 0 {
-            buf[*i] = b'0'; *i += 1; return *i;
+            buf[*i] = b'0';
+            *i += 1;
+            return *i;
         }
         let mut tmp = [0u8; 10];
         let mut ti = 0usize;
         let mut n = self;
-        while n > 0 { tmp[ti] = b'0' + (n % 10) as u8; ti += 1; n /= 10; }
-        for j in (0..ti).rev() { buf[*i] = tmp[j]; *i += 1; }
+        while n > 0 {
+            tmp[ti] = b'0' + (n % 10) as u8;
+            ti += 1;
+            n /= 10;
+        }
+        for j in (0..ti).rev() {
+            buf[*i] = tmp[j];
+            *i += 1;
+        }
         *i
     }
 }

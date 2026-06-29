@@ -10,8 +10,8 @@
 //   // result = Ok(bytes_in_buf) or Err(HttpError)
 // ---------------------------------------------------------------------------
 
-use crate::net::{config, tcp, dns};
 use crate::arch::x86_64::interrupts::uptime_ms;
+use crate::net::{config, dns, tcp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpError {
@@ -34,7 +34,9 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 5000;
 ///
 /// Returns `Ok(n)` where `n` is the number of bytes written to `out`.
 pub fn get(host: &str, port: u16, path: &str, out: &mut [u8]) -> Result<usize, HttpError> {
-    if !crate::net::driver::is_ready() { return Err(HttpError::NicNotReady); }
+    if !crate::net::driver::is_ready() {
+        return Err(HttpError::NicNotReady);
+    }
     config::get().ok_or(HttpError::NicNotReady)?;
 
     // ── Resolve IP ────────────────────────────────────────────────────────
@@ -137,18 +139,26 @@ fn parse_dotted_ip(s: &str) -> Option<[u8; 4]> {
         match b {
             b'0'..=b'9' => {
                 cur = cur * 10 + (b - b'0') as u16;
-                if cur > 255 { return None; }
+                if cur > 255 {
+                    return None;
+                }
                 digits += 1;
             }
             b'.' => {
-                if digits == 0 || idx >= 3 { return None; }
+                if digits == 0 || idx >= 3 {
+                    return None;
+                }
                 octets[idx] = cur as u8;
-                idx += 1; cur = 0; digits = 0;
+                idx += 1;
+                cur = 0;
+                digits = 0;
             }
             _ => return None,
         }
     }
-    if idx != 3 || digits == 0 { return None; }
+    if idx != 3 || digits == 0 {
+        return None;
+    }
     octets[3] = cur as u8;
     Some(octets)
 }

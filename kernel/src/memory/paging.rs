@@ -137,7 +137,7 @@ pub struct PageTableManager {
 
 impl PageTableManager {
     /// Create a new page table manager with a pre-allocated PML4
-    /// 
+    ///
     /// # Safety
     /// The pml4_frame must be a valid, uniquely-owned frame that can be safely cast to a mutable reference
     pub unsafe fn new(pml4_frame: Frame) -> Self {
@@ -180,7 +180,7 @@ impl PageTableManager {
     }
 
     /// Map a virtual address to a physical address
-    /// 
+    ///
     /// # Safety
     /// Caller must ensure no other code accesses overlapping address ranges
     pub unsafe fn map_page(
@@ -215,7 +215,8 @@ impl PageTableManager {
                 let pdpt_ptr = pdpt_virt as *mut PageTable;
                 (*pdpt_ptr).clear();
 
-                self.pml4.set_entry(pml4_index, pdpt_phys as u64 | parent_flags);
+                self.pml4
+                    .set_entry(pml4_index, pdpt_phys as u64 | parent_flags);
 
                 &mut *pdpt_ptr
             }
@@ -288,7 +289,7 @@ impl PageTableManager {
     }
 
     /// Enable paging with this page table
-    /// 
+    ///
     /// # Safety
     /// Must have valid page tables set up before calling
     pub unsafe fn enable_paging(&self) {
@@ -334,7 +335,7 @@ impl PageTableManager {
     ) -> Result<(), &'static str> {
         let pml4_index = (virt >> 39) & 0x1ff;
         let pdpt_index = (virt >> 30) & 0x1ff;
-        let pdt_index  = (virt >> 21) & 0x1ff;
+        let pdt_index = (virt >> 21) & 0x1ff;
 
         // PML4 entry → PDPT
         let pml4_entry = self.pml4.entry(pml4_index);
@@ -572,7 +573,9 @@ pub fn destroy_user_space_root(pml4_phys: usize) {
             // If not a huge page, this entry points to a PT we own.
             if entry & PageTableFlags::HUGE_PAGE == 0 {
                 let pt_phys = (entry & ADDR_MASK) as usize;
-                unsafe { free_pt_phys(pt_phys); }
+                unsafe {
+                    free_pt_phys(pt_phys);
+                }
             }
             pdt.set_entry(i, 0);
         }
@@ -589,7 +592,9 @@ pub fn destroy_user_space_root(pml4_phys: usize) {
             // If not a huge page, this entry points to a PDT we own.
             if entry & PageTableFlags::HUGE_PAGE == 0 {
                 let pdt_phys = (entry & ADDR_MASK) as usize;
-                unsafe { free_pdt_phys(pdt_phys); }
+                unsafe {
+                    free_pdt_phys(pdt_phys);
+                }
             }
             pdpt.set_entry(i, 0);
         }

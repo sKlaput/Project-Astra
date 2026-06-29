@@ -14,80 +14,84 @@ use spin::Mutex;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const BG:         u32 = 0x0A0E14;
-const TEXT_NORM:  u32 = 0xB0D4B8;
+const BG: u32 = 0x0A0E14;
+const TEXT_NORM: u32 = 0xB0D4B8;
 const PROMPT_COL: u32 = 0x4FC3F7;
-const INPUT_COL:  u32 = 0xE8F4FD;
+const INPUT_COL: u32 = 0xE8F4FD;
 const CURSOR_COL: u32 = 0x4FC3F7;
-const ERR_COL:    u32 = 0xFF6B6B;
-const SEPARATOR:  u32 = 0x1E3A5F;
+const ERR_COL: u32 = 0xFF6B6B;
+const SEPARATOR: u32 = 0x1E3A5F;
 
 // ── Font metrics (scale 2) ────────────────────────────────────────────────────
 
-const SCALE:  usize = 2;
-const CHAR_W: usize = 6 * SCALE;   // 12
-const CHAR_H: usize = 8 * SCALE;   // 16 (7px glyph * 2 + 2px line gap)
-const PAD_X:  usize = 10;
+const SCALE: usize = 2;
+const CHAR_W: usize = 6 * SCALE; // 12
+const CHAR_H: usize = 8 * SCALE; // 16 (7px glyph * 2 + 2px line gap)
+const PAD_X: usize = 10;
 
 const PROMPT: &str = "astra$ ";
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-const HIST_ROWS:  usize = 40;
-const LINE_BUF:   usize = 82;
-const CMD_HIST:   usize = 16;   // command history ring size
-const PATH_BUF:   usize = 128;  // max cwd path length
+const HIST_ROWS: usize = 40;
+const LINE_BUF: usize = 82;
+const CMD_HIST: usize = 16; // command history ring size
+const PATH_BUF: usize = 128; // max cwd path length
 
 #[derive(Clone, Copy)]
 struct Line {
     data: [u8; LINE_BUF],
-    len:  usize,
-    col:  u32,
+    len: usize,
+    col: u32,
 }
 
 impl Line {
     const fn empty() -> Self {
-        Line { data: [0u8; LINE_BUF], len: 0, col: TEXT_NORM }
+        Line {
+            data: [0u8; LINE_BUF],
+            len: 0,
+            col: TEXT_NORM,
+        }
     }
 }
 
 struct TermState {
-    hist:       [Line; HIST_ROWS],
-    hist_cnt:   usize,
-    input:      [u8; LINE_BUF],
-    input_len:  usize,
-    cursor_pos: usize,   // byte offset within input where next char is inserted
-    inited:     bool,
+    hist: [Line; HIST_ROWS],
+    hist_cnt: usize,
+    input: [u8; LINE_BUF],
+    input_len: usize,
+    cursor_pos: usize, // byte offset within input where next char is inserted
+    inited: bool,
     // command history
-    cmd_hist:   [[u8; LINE_BUF]; CMD_HIST],
-    cmd_hlen:   [usize; CMD_HIST],
-    cmd_hcount: usize,           // total commands entered
-    cmd_hpos:   usize,           // browse position (0 = latest)
+    cmd_hist: [[u8; LINE_BUF]; CMD_HIST],
+    cmd_hlen: [usize; CMD_HIST],
+    cmd_hcount: usize, // total commands entered
+    cmd_hpos: usize,   // browse position (0 = latest)
     // scroll: 0 = pinned to bottom (most recent), N = scrolled back N rows
     scroll_off: usize,
     // current working directory (FAT32 cluster + display path)
-    cwd_cluster: u32,            // 0 = use FAT32 root when mounted
-    cwd_path:    [u8; PATH_BUF],
-    cwd_plen:    usize,
+    cwd_cluster: u32, // 0 = use FAT32 root when mounted
+    cwd_path: [u8; PATH_BUF],
+    cwd_plen: usize,
 }
 
 impl TermState {
     const fn new() -> Self {
         TermState {
-            hist:       [Line::empty(); HIST_ROWS],
-            hist_cnt:   0,
-            input:      [0u8; LINE_BUF],
-            input_len:  0,
+            hist: [Line::empty(); HIST_ROWS],
+            hist_cnt: 0,
+            input: [0u8; LINE_BUF],
+            input_len: 0,
             cursor_pos: 0,
-            inited:     false,
-            cmd_hist:   [[0u8; LINE_BUF]; CMD_HIST],
-            cmd_hlen:   [0usize; CMD_HIST],
+            inited: false,
+            cmd_hist: [[0u8; LINE_BUF]; CMD_HIST],
+            cmd_hlen: [0usize; CMD_HIST],
             cmd_hcount: 0,
-            cmd_hpos:   0,
+            cmd_hpos: 0,
             scroll_off: 0,
             cwd_cluster: 0,
-            cwd_path:   [0u8; PATH_BUF],
-            cwd_plen:   0,
+            cwd_path: [0u8; PATH_BUF],
+            cwd_plen: 0,
         }
     }
 
@@ -114,7 +118,9 @@ impl TermState {
 
     /// Push a command into the ring history and reset browse position.
     fn push_cmd_hist(&mut self, cmd: &[u8], len: usize) {
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         let slot = self.cmd_hcount % CMD_HIST;
         let n = len.min(LINE_BUF);
         self.cmd_hist[slot][..n].copy_from_slice(&cmd[..n]);
@@ -127,10 +133,13 @@ impl TermState {
     /// Returns true if input was changed.
     fn history_navigate(&mut self, delta: isize) -> bool {
         let total = self.cmd_hcount.min(CMD_HIST);
-        if total == 0 { return false; }
-        let new_pos = (self.cmd_hpos as isize + delta)
-            .clamp(0, total as isize) as usize;
-        if new_pos == self.cmd_hpos { return false; }
+        if total == 0 {
+            return false;
+        }
+        let new_pos = (self.cmd_hpos as isize + delta).clamp(0, total as isize) as usize;
+        if new_pos == self.cmd_hpos {
+            return false;
+        }
         self.cmd_hpos = new_pos;
         if new_pos == 0 {
             self.input_len = 0;
@@ -190,7 +199,9 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
     let inner_x = cx + PAD_X;
     let inner_w = cw.saturating_sub(PAD_X * 2);
     let max_cols = inner_w / CHAR_W;
-    if max_cols == 0 { return; }
+    if max_cols == 0 {
+        return;
+    }
 
     // Input row at bottom of client area
     let input_y = cy + ch.saturating_sub(CHAR_H + 10);
@@ -211,7 +222,13 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
 
     // Show scroll indicator when not at the bottom
     if scroll > 0 {
-        framebuffer::draw_text_scaled(inner_x, history_y, "^ PgUp/PgDn to scroll ^", 0x444466, SCALE);
+        framebuffer::draw_text_scaled(
+            inner_x,
+            history_y,
+            "^ PgUp/PgDn to scroll ^",
+            0x444466,
+            SCALE,
+        );
     }
 
     for (row, idx) in (start_idx..end_idx).enumerate() {
@@ -234,7 +251,11 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
     let text_x = inner_x + prompt_cols * CHAR_W;
     let input_cols = max_cols.saturating_sub(prompt_cols);
     if t.input_len > 0 && input_cols > 0 {
-        let scroll_start = if t.cursor_pos >= input_cols { t.cursor_pos + 1 - input_cols } else { 0 };
+        let scroll_start = if t.cursor_pos >= input_cols {
+            t.cursor_pos + 1 - input_cols
+        } else {
+            0
+        };
         let shown_end = (scroll_start + input_cols).min(t.input_len);
         if shown_end > scroll_start {
             let s = unsafe { core::str::from_utf8_unchecked(&t.input[scroll_start..shown_end]) };
@@ -244,7 +265,11 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
 
     // Block cursor at cursor_pos
     let input_cols_c = max_cols.saturating_sub(prompt_cols);
-    let scroll_c = if t.cursor_pos >= input_cols_c { t.cursor_pos + 1 - input_cols_c } else { 0 };
+    let scroll_c = if t.cursor_pos >= input_cols_c {
+        t.cursor_pos + 1 - input_cols_c
+    } else {
+        0
+    };
     let cur_x = text_x + (t.cursor_pos - scroll_c) * CHAR_W;
     framebuffer::fill_rect(cur_x, input_y, CHAR_W - 2, CHAR_H, CURSOR_COL);
 }
@@ -256,7 +281,9 @@ pub fn render_input_line(cx: usize, cy: usize, cw: usize, ch: usize) {
     let inner_x = cx + PAD_X;
     let inner_w = cw.saturating_sub(PAD_X * 2);
     let max_cols = inner_w / CHAR_W;
-    if max_cols == 0 { return; }
+    if max_cols == 0 {
+        return;
+    }
 
     let input_y = cy + ch.saturating_sub(CHAR_H + 10);
 
@@ -271,7 +298,11 @@ pub fn render_input_line(cx: usize, cy: usize, cw: usize, ch: usize) {
     let text_x = inner_x + prompt_cols * CHAR_W;
     let input_cols = max_cols.saturating_sub(prompt_cols);
     if t.input_len > 0 && input_cols > 0 {
-        let scroll_start = if t.cursor_pos >= input_cols { t.cursor_pos + 1 - input_cols } else { 0 };
+        let scroll_start = if t.cursor_pos >= input_cols {
+            t.cursor_pos + 1 - input_cols
+        } else {
+            0
+        };
         let shown_end = (scroll_start + input_cols).min(t.input_len);
         if shown_end > scroll_start {
             let s = unsafe { core::str::from_utf8_unchecked(&t.input[scroll_start..shown_end]) };
@@ -281,7 +312,11 @@ pub fn render_input_line(cx: usize, cy: usize, cw: usize, ch: usize) {
 
     // Block cursor at cursor_pos
     let input_cols_c = max_cols.saturating_sub(prompt_cols);
-    let scroll_c = if t.cursor_pos >= input_cols_c { t.cursor_pos + 1 - input_cols_c } else { 0 };
+    let scroll_c = if t.cursor_pos >= input_cols_c {
+        t.cursor_pos + 1 - input_cols_c
+    } else {
+        0
+    };
     let cur_x = text_x + (t.cursor_pos - scroll_c) * CHAR_W;
     framebuffer::fill_rect(cur_x, input_y, CHAR_W - 2, CHAR_H, CURSOR_COL);
 }
@@ -364,12 +399,20 @@ pub fn handle_key(key: Key) -> TermAction {
 
         Key::ArrowUp => {
             let changed = TERM.lock().history_navigate(1);
-            if changed { TermAction::RedrawInput } else { TermAction::Nothing }
+            if changed {
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
         }
 
         Key::ArrowDown => {
             let changed = TERM.lock().history_navigate(-1);
-            if changed { TermAction::RedrawInput } else { TermAction::Nothing }
+            if changed {
+                TermAction::RedrawInput
+            } else {
+                TermAction::Nothing
+            }
         }
 
         Key::PageUp => {
@@ -436,11 +479,15 @@ fn execute_input() {
         t.cmd_hpos = 0;
     }
 
-    if cmd_len == 0 { return; }
+    if cmd_len == 0 {
+        return;
+    }
 
     let raw = unsafe { core::str::from_utf8_unchecked(&cmd_data[..cmd_len]) };
     let raw = raw.trim_end();
-    if raw.is_empty() { return; }
+    if raw.is_empty() {
+        return;
+    }
 
     let (cmd, args) = match raw.find(' ') {
         Some(pos) => (&raw[..pos], raw[pos + 1..].trim_start()),
@@ -472,15 +519,36 @@ fn run_cmd(cmd: &str, args: &str) {
             t.push_str("  net               - network status", TEXT_NORM);
             t.push_str("  ping <ip>         - send ICMP echo to <ip>", TEXT_NORM);
             t.push_str("  dns <host>        - resolve hostname via DNS", TEXT_NORM);
-            t.push_str("  http <url>        - HTTP GET (e.g. http http://example.com/)", TEXT_NORM);
-            t.push_str("  netcheck [n]      - run ping/dns/http checks n times (default 3)", TEXT_NORM);
-            t.push_str("  exec <prog>        - run user program (hello/gui)", TEXT_NORM);
+            t.push_str(
+                "  http <url>        - HTTP GET (e.g. http http://example.com/)",
+                TEXT_NORM,
+            );
+            t.push_str(
+                "  netcheck [n]      - run ping/dns/http checks n times (default 3)",
+                TEXT_NORM,
+            );
+            t.push_str(
+                "  exec <prog>        - run user program (hello/gui)",
+                TEXT_NORM,
+            );
             t.push_str("  ps                 - list processes", TEXT_NORM);
             t.push_str("  kill <pid>         - terminate process", TEXT_NORM);
-            t.push_str("  memprobe          - kernel/user isolation diagnostic", TEXT_NORM);
-            t.push_str("  memtest           - pointer-validation regression battery", TEXT_NORM);
-            t.push_str("  cpuinfo           - CPU vendor/brand, APIC, topology", TEXT_NORM);
-            t.push_str("  apictest          - switch tick source PIT->LAPIC->PIT", TEXT_NORM);
+            t.push_str(
+                "  memprobe          - kernel/user isolation diagnostic",
+                TEXT_NORM,
+            );
+            t.push_str(
+                "  memtest           - pointer-validation regression battery",
+                TEXT_NORM,
+            );
+            t.push_str(
+                "  cpuinfo           - CPU vendor/brand, APIC, topology",
+                TEXT_NORM,
+            );
+            t.push_str(
+                "  apictest          - switch tick source PIT->LAPIC->PIT",
+                TEXT_NORM,
+            );
             t.push_str("  echo <text>        - print text", TEXT_NORM);
             t.push_str("  Up/Down arrows    - command history", TEXT_NORM);
         }
@@ -506,20 +574,24 @@ fn run_cmd(cmd: &str, args: &str) {
             buf[..pfx.len()].copy_from_slice(pfx);
             pos += pfx.len();
             pos += write_dec(&mut buf[pos..], secs);
-            buf[pos] = b's'; pos += 1;
-            buf[pos] = b'.'; pos += 1;
+            buf[pos] = b's';
+            pos += 1;
+            buf[pos] = b'.';
+            pos += 1;
             pos += write_dec(&mut buf[pos..], millis);
-            buf[pos] = b'm'; pos += 1;
-            buf[pos] = b's'; pos += 1;
+            buf[pos] = b'm';
+            pos += 1;
+            buf[pos] = b's';
+            pos += 1;
             let s = unsafe { core::str::from_utf8_unchecked(&buf[..pos]) };
             TERM.lock().push_str(s, TEXT_NORM);
         }
 
         "mem" => {
             let heap = crate::memory::heap::get_telemetry();
-            let used_kb  = heap.used_bytes / 1024;
+            let used_kb = heap.used_bytes / 1024;
             let total_kb = (heap.mapped_pages * 4096) / 1024;
-            let free_kb  = total_kb.saturating_sub(used_kb);
+            let free_kb = total_kb.saturating_sub(used_kb);
             let mut t = TERM.lock();
             // "Used:  1234 KB / 8192 KB  (15%)"
             let mut buf = [0u8; LINE_BUF];
@@ -672,18 +744,27 @@ fn cmd_ls(args: &str) {
             let mut count = 0usize;
             crate::fat32::list_dir(clus, |de| {
                 // skip . and .. in listing
-                if de.name_len == 1 && de.name[0] == b'.' { return true; }
-                if de.name_len == 2 && de.name[0] == b'.' && de.name[1] == b'.' { return true; }
+                if de.name_len == 1 && de.name[0] == b'.' {
+                    return true;
+                }
+                if de.name_len == 2 && de.name[0] == b'.' && de.name[1] == b'.' {
+                    return true;
+                }
                 // Build display line: "  NAME  <DIR>" or "  NAME  1234 B"
                 let mut buf = [0u8; LINE_BUF];
                 let mut pos = 0;
-                buf[pos] = b' '; pos += 1;
-                buf[pos] = b' '; pos += 1;
+                buf[pos] = b' ';
+                pos += 1;
+                buf[pos] = b' ';
+                pos += 1;
                 let nn = de.name_len.min(12);
                 buf[pos..pos + nn].copy_from_slice(&de.name[..nn]);
                 pos += nn;
                 // pad to column 14
-                while pos < 16 { buf[pos] = b' '; pos += 1; }
+                while pos < 16 {
+                    buf[pos] = b' ';
+                    pos += 1;
+                }
                 if de.is_dir {
                     let d = b"<DIR>";
                     buf[pos..pos + d.len()].copy_from_slice(d);
@@ -695,7 +776,8 @@ fn cmd_ls(args: &str) {
                     pos += b_.len();
                 }
                 let s = unsafe { core::str::from_utf8_unchecked(&buf[..pos]) };
-                TERM.lock().push_str(s, if de.is_dir { 0x4FC3F7 } else { TEXT_NORM });
+                TERM.lock()
+                    .push_str(s, if de.is_dir { 0x4FC3F7 } else { TEXT_NORM });
                 count += 1;
                 true
             });
@@ -738,7 +820,8 @@ fn cmd_cd(args: &str) {
                     tmp
                 };
                 drop(t);
-                let path_str = unsafe { core::str::from_utf8_unchecked(&new_path_bytes[..new_plen]) };
+                let path_str =
+                    unsafe { core::str::from_utf8_unchecked(&new_path_bytes[..new_plen]) };
                 let new_clus = walk_path_to_cluster(path_str).unwrap_or(0);
                 let mut t2 = TERM.lock();
                 t2.cwd_cluster = new_clus;
@@ -750,7 +833,11 @@ fn cmd_cd(args: &str) {
 
     // Navigate into a named subdirectory
     let parent_clus = cwd_cluster().unwrap_or_else(|| {
-        if crate::fat32::is_mounted() { crate::fat32::root_cluster() } else { 0 }
+        if crate::fat32::is_mounted() {
+            crate::fat32::root_cluster()
+        } else {
+            0
+        }
     });
     let nb = args.as_bytes();
     match crate::fat32::find_in_dir(parent_clus, nb) {
@@ -782,7 +869,11 @@ fn cmd_cat(args: &str) {
         return;
     }
     let parent_clus = cwd_cluster().unwrap_or_else(|| {
-        if crate::fat32::is_mounted() { crate::fat32::root_cluster() } else { 0 }
+        if crate::fat32::is_mounted() {
+            crate::fat32::root_cluster()
+        } else {
+            0
+        }
     });
     let nb = args.as_bytes();
     match crate::fat32::find_in_dir(parent_clus, nb) {
@@ -834,7 +925,8 @@ fn cmd_touch(args: &str) {
         return;
     }
     if !crate::fat32::is_mounted() {
-        TERM.lock().push_str("touch: no FAT32 disk mounted", ERR_COL);
+        TERM.lock()
+            .push_str("touch: no FAT32 disk mounted", ERR_COL);
         return;
     }
     let parent_clus = cwd_cluster().unwrap_or_else(|| crate::fat32::root_cluster());
@@ -853,7 +945,8 @@ fn cmd_mkdir(args: &str) {
         return;
     }
     if !crate::fat32::is_mounted() {
-        TERM.lock().push_str("mkdir: no FAT32 disk mounted", ERR_COL);
+        TERM.lock()
+            .push_str("mkdir: no FAT32 disk mounted", ERR_COL);
         return;
     }
     let parent_clus = cwd_cluster().unwrap_or_else(|| crate::fat32::root_cluster());
@@ -899,7 +992,8 @@ fn cmd_rename(args: &str) {
         return;
     }
     if !crate::fat32::is_mounted() {
-        TERM.lock().push_str("rename: no FAT32 disk mounted", ERR_COL);
+        TERM.lock()
+            .push_str("rename: no FAT32 disk mounted", ERR_COL);
         return;
     }
     let parent_clus = cwd_cluster().unwrap_or_else(|| crate::fat32::root_cluster());
@@ -931,10 +1025,14 @@ fn cmd_cp(args: &str) {
     let dir_c = cwd_cluster().unwrap_or_else(|| crate::fat32::root_cluster());
     let de = match crate::fat32::find_in_dir(dir_c, src.as_bytes()) {
         Some(d) => d,
-        None => { TERM.lock().push_str("cp: source not found", ERR_COL); return; }
+        None => {
+            TERM.lock().push_str("cp: source not found", ERR_COL);
+            return;
+        }
     };
     if de.is_dir {
-        TERM.lock().push_str("cp: directories not supported", ERR_COL);
+        TERM.lock()
+            .push_str("cp: directories not supported", ERR_COL);
         return;
     }
     const MAX: usize = 65536;
@@ -966,8 +1064,11 @@ fn cmd_mv(args: &str) {
     let dir_c = cwd_cluster().unwrap_or_else(|| crate::fat32::root_cluster());
     let ok = crate::fat32::rename_entry(dir_c, src.as_bytes(), dst.as_bytes());
     let mut t = TERM.lock();
-    if ok { t.push_str("moved", TEXT_NORM); }
-    else  { t.push_str("mv: failed", ERR_COL); }
+    if ok {
+        t.push_str("moved", TEXT_NORM);
+    } else {
+        t.push_str("mv: failed", ERR_COL);
+    }
 }
 
 fn cmd_net() {
@@ -990,9 +1091,14 @@ fn cmd_net() {
     pos += pfx.len();
     const HEX: &[u8] = b"0123456789abcdef";
     for i in 0..6 {
-        if i > 0 { mac_buf[pos] = b':'; pos += 1; }
-        mac_buf[pos] = HEX[(mac[i] >> 4) as usize]; pos += 1;
-        mac_buf[pos] = HEX[(mac[i] & 0xF) as usize]; pos += 1;
+        if i > 0 {
+            mac_buf[pos] = b':';
+            pos += 1;
+        }
+        mac_buf[pos] = HEX[(mac[i] >> 4) as usize];
+        pos += 1;
+        mac_buf[pos] = HEX[(mac[i] & 0xF) as usize];
+        pos += 1;
     }
     let s = unsafe { core::str::from_utf8_unchecked(&mac_buf[..pos]) };
     t.push_str(s, TEXT_NORM);
@@ -1042,22 +1148,38 @@ fn cmd_net() {
         let mut dp = 0usize;
         let dpfx = b"RX q: sw=";
         let dl = dpfx.len().min(LINE_BUF);
-        dbuf[..dl].copy_from_slice(&dpfx[..dl]); dp += dl;
+        dbuf[..dl].copy_from_slice(&dpfx[..dl]);
+        dp += dl;
         dp += write_dec(&mut dbuf[dp..], rx_last as u64);
-        if dp + 4 < LINE_BUF { dbuf[dp..dp+4].copy_from_slice(b" hw="); dp += 4; }
+        if dp + 4 < LINE_BUF {
+            dbuf[dp..dp + 4].copy_from_slice(b" hw=");
+            dp += 4;
+        }
         dp += write_dec(&mut dbuf[dp..], rx_hw as u64);
-        t.push_str(unsafe { core::str::from_utf8_unchecked(&dbuf[..dp]) },
-                   if rx_hw != rx_last { 0x66FF66 } else { TEXT_NORM });
+        t.push_str(
+            unsafe { core::str::from_utf8_unchecked(&dbuf[..dp]) },
+            if rx_hw != rx_last {
+                0x66FF66
+            } else {
+                TEXT_NORM
+            },
+        );
         let mut dbuf2 = [0u8; LINE_BUF];
         let mut dp2 = 0usize;
         let dpfx2 = b"TX q: sw=";
         let dl2 = dpfx2.len().min(LINE_BUF);
-        dbuf2[..dl2].copy_from_slice(&dpfx2[..dl2]); dp2 += dl2;
+        dbuf2[..dl2].copy_from_slice(&dpfx2[..dl2]);
+        dp2 += dl2;
         dp2 += write_dec(&mut dbuf2[dp2..], tx_last as u64);
-        if dp2 + 4 < LINE_BUF { dbuf2[dp2..dp2+4].copy_from_slice(b" hw="); dp2 += 4; }
+        if dp2 + 4 < LINE_BUF {
+            dbuf2[dp2..dp2 + 4].copy_from_slice(b" hw=");
+            dp2 += 4;
+        }
         dp2 += write_dec(&mut dbuf2[dp2..], tx_hw as u64);
-        t.push_str(unsafe { core::str::from_utf8_unchecked(&dbuf2[..dp2]) },
-                   if tx_hw != tx_last { 0x66FF66 } else { 0xFFAA44 });
+        t.push_str(
+            unsafe { core::str::from_utf8_unchecked(&dbuf2[..dp2]) },
+            if tx_hw != tx_last { 0x66FF66 } else { 0xFFAA44 },
+        );
     } else {
         t.push_str("IP: not configured", ERR_COL);
     }
@@ -1073,11 +1195,15 @@ fn parse_ip(s: &str) -> Option<[u8; 4]> {
         match b {
             b'0'..=b'9' => {
                 cur = cur * 10 + (b - b'0') as u16;
-                if cur > 255 { return None; }
+                if cur > 255 {
+                    return None;
+                }
                 digits += 1;
             }
             b'.' => {
-                if digits == 0 || idx >= 3 { return None; }
+                if digits == 0 || idx >= 3 {
+                    return None;
+                }
                 octets[idx] = cur as u8;
                 idx += 1;
                 cur = 0;
@@ -1086,7 +1212,9 @@ fn parse_ip(s: &str) -> Option<[u8; 4]> {
             _ => return None,
         }
     }
-    if idx != 3 || digits == 0 { return None; }
+    if idx != 3 || digits == 0 {
+        return None;
+    }
     octets[3] = cur as u8;
     Some(octets)
 }
@@ -1096,7 +1224,10 @@ fn write_ipv4(buf: &mut [u8], ip: [u8; 4]) -> usize {
     let mut pos = 0usize;
     for (i, &octet) in ip.iter().enumerate() {
         if i > 0 {
-            if pos < buf.len() { buf[pos] = b'.'; pos += 1; }
+            if pos < buf.len() {
+                buf[pos] = b'.';
+                pos += 1;
+            }
         }
         pos += write_dec(&mut buf[pos..], octet as u64);
     }
@@ -1107,7 +1238,8 @@ fn write_ipv4(buf: &mut [u8], ip: [u8; 4]) -> usize {
 fn cmd_ping(args: &str) {
     let target = args.trim();
     if target.is_empty() {
-        TERM.lock().push_str("Usage: ping <ip>  e.g. ping 10.0.2.2", ERR_COL);
+        TERM.lock()
+            .push_str("Usage: ping <ip>  e.g. ping 10.0.2.2", ERR_COL);
         return;
     }
     let dst = match parse_ip(target) {
@@ -1138,7 +1270,10 @@ fn cmd_ping(args: &str) {
         let sl = sfx.len().min(LINE_BUF - p);
         buf[p..p + sl].copy_from_slice(&sfx[..sl]);
         p += sl;
-        t.push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, TEXT_NORM);
+        t.push_str(
+            unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+            TEXT_NORM,
+        );
     }
 
     // ── Phase 1: ARP resolution ────────────────────────────────────────────
@@ -1157,7 +1292,10 @@ fn cmd_ping(args: &str) {
             buf[p..p + sl].copy_from_slice(&sfx[..sl]);
             p += sl;
             p += fmt_mac(&mut buf[p..], m);
-            TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, 0x88CCFF);
+            TERM.lock().push_str(
+                unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+                0x88CCFF,
+            );
             m
         }
         None => {
@@ -1166,8 +1304,14 @@ fn cmd_ping(args: &str) {
             let mut p = pfx.len();
             buf[..p].copy_from_slice(pfx);
             p += write_ipv4(&mut buf[p..], dst);
-            TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, ERR_COL);
-            TERM.lock().push_str("ping: host unreachable (no ARP reply — check NIC RX)", ERR_COL);
+            TERM.lock().push_str(
+                unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+                ERR_COL,
+            );
+            TERM.lock().push_str(
+                "ping: host unreachable (no ARP reply — check NIC RX)",
+                ERR_COL,
+            );
             return;
         }
     };
@@ -1201,8 +1345,14 @@ fn cmd_ping(args: &str) {
                     buf[p..p + sl2].copy_from_slice(&sfx2[..sl2]);
                     p += sl2;
                     p += write_dec(&mut buf[p..], reply.rtt_ms as u64);
-                    if p < LINE_BUF { buf[p] = b'm'; p += 1; }
-                    if p < LINE_BUF { buf[p] = b's'; p += 1; }
+                    if p < LINE_BUF {
+                        buf[p] = b'm';
+                        p += 1;
+                    }
+                    if p < LINE_BUF {
+                        buf[p] = b's';
+                        p += 1;
+                    }
                     TERM.lock().push_str(
                         unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
                         0x66FF66,
@@ -1238,9 +1388,18 @@ fn fmt_mac(buf: &mut [u8], mac: [u8; 6]) -> usize {
     const HEX: &[u8] = b"0123456789abcdef";
     let mut p = 0usize;
     for i in 0..6 {
-        if i > 0 && p < buf.len() { buf[p] = b':'; p += 1; }
-        if p < buf.len() { buf[p] = HEX[(mac[i] >> 4) as usize]; p += 1; }
-        if p < buf.len() { buf[p] = HEX[(mac[i] & 0xF) as usize]; p += 1; }
+        if i > 0 && p < buf.len() {
+            buf[p] = b':';
+            p += 1;
+        }
+        if p < buf.len() {
+            buf[p] = HEX[(mac[i] >> 4) as usize];
+            p += 1;
+        }
+        if p < buf.len() {
+            buf[p] = HEX[(mac[i] & 0xF) as usize];
+            p += 1;
+        }
     }
     p
 }
@@ -1249,7 +1408,8 @@ fn fmt_mac(buf: &mut [u8], mac: [u8; 6]) -> usize {
 fn cmd_dns(args: &str) {
     let name = args.trim();
     if name.is_empty() {
-        TERM.lock().push_str("Usage: dns <hostname>  e.g. dns google.com", ERR_COL);
+        TERM.lock()
+            .push_str("Usage: dns <hostname>  e.g. dns google.com", ERR_COL);
         return;
     }
     if !crate::net::driver::is_ready() {
@@ -1267,10 +1427,22 @@ fn cmd_dns(args: &str) {
         let nl = nb.len().min(LINE_BUF - p);
         buf[p..p + nl].copy_from_slice(&nb[..nl]);
         p += nl;
-        if p < LINE_BUF { buf[p] = b'.'; p += 1; }
-        if p < LINE_BUF { buf[p] = b'.'; p += 1; }
-        if p < LINE_BUF { buf[p] = b'.'; p += 1; }
-        t.push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, TEXT_NORM);
+        if p < LINE_BUF {
+            buf[p] = b'.';
+            p += 1;
+        }
+        if p < LINE_BUF {
+            buf[p] = b'.';
+            p += 1;
+        }
+        if p < LINE_BUF {
+            buf[p] = b'.';
+            p += 1;
+        }
+        t.push_str(
+            unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+            TEXT_NORM,
+        );
     }
 
     match crate::net::dns::resolve(name, 3000) {
@@ -1280,16 +1452,24 @@ fn cmd_dns(args: &str) {
             let mut p = pfx.len();
             buf[..p].copy_from_slice(pfx);
             p += write_ipv4(&mut buf[p..], ip);
-            TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, 0x66FF66);
+            TERM.lock().push_str(
+                unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+                0x66FF66,
+            );
         }
         Err(crate::net::dns::DnsError::ArpFailed) => {
-            TERM.lock().push_str("dns: gateway ARP failed (NIC or slirp unreachable)", ERR_COL);
+            TERM.lock().push_str(
+                "dns: gateway ARP failed (NIC or slirp unreachable)",
+                ERR_COL,
+            );
         }
         Err(crate::net::dns::DnsError::SendFailed) => {
-            TERM.lock().push_str("dns: UDP send failed (NIC TX error)", ERR_COL);
+            TERM.lock()
+                .push_str("dns: UDP send failed (NIC TX error)", ERR_COL);
         }
         Err(crate::net::dns::DnsError::NxDomain) => {
-            TERM.lock().push_str("dns: NXDOMAIN (name does not exist)", ERR_COL);
+            TERM.lock()
+                .push_str("dns: NXDOMAIN (name does not exist)", ERR_COL);
         }
         Err(crate::net::dns::DnsError::RcodeError(rc)) => {
             let mut buf = [0u8; LINE_BUF];
@@ -1304,8 +1484,12 @@ fn cmd_dns(args: &str) {
                 _ => b"",
             };
             let hl = hint.len().min(LINE_BUF - p);
-            buf[p..p+hl].copy_from_slice(&hint[..hl]); p += hl;
-            TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, ERR_COL);
+            buf[p..p + hl].copy_from_slice(&hint[..hl]);
+            p += hl;
+            TERM.lock().push_str(
+                unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+                ERR_COL,
+            );
         }
         Err(_) => {
             TERM.lock().push_str("dns: no response (timeout)", ERR_COL);
@@ -1318,7 +1502,8 @@ fn cmd_dns(args: &str) {
 fn cmd_http(args: &str) {
     let url = args.trim();
     if url.is_empty() {
-        TERM.lock().push_str("Usage: http <url>  e.g. http http://example.com/", ERR_COL);
+        TERM.lock()
+            .push_str("Usage: http <url>  e.g. http http://example.com/", ERR_COL);
         return;
     }
 
@@ -1344,10 +1529,17 @@ fn cmd_http(args: &str) {
         let mut p = 0u16;
         let mut ok = true;
         for b in port_str.bytes() {
-            if b < b'0' || b > b'9' { ok = false; break; }
+            if b < b'0' || b > b'9' {
+                ok = false;
+                break;
+            }
             p = p.saturating_mul(10).saturating_add((b - b'0') as u16);
         }
-        if ok && p > 0 { (&host_port[..colon], p) } else { (host_port, 80u16) }
+        if ok && p > 0 {
+            (&host_port[..colon], p)
+        } else {
+            (host_port, 80u16)
+        }
     } else {
         (host_port, 80u16)
     };
@@ -1366,7 +1558,10 @@ fn cmd_http(args: &str) {
         let pl2 = pb2.len().min(LINE_BUF - p);
         buf[p..p + pl2].copy_from_slice(&pb2[..pl2]);
         p += pl2;
-        t.push_str(unsafe { core::str::from_utf8_unchecked(&buf[..p]) }, TEXT_NORM);
+        t.push_str(
+            unsafe { core::str::from_utf8_unchecked(&buf[..p]) },
+            TEXT_NORM,
+        );
     }
 
     // Static response buffer (4 KiB — enough for most short responses)
@@ -1376,12 +1571,14 @@ fn cmd_http(args: &str) {
     match crate::net::http::get(host, port, path, resp_buf) {
         Err(e) => {
             let msg = match e {
-                crate::net::http::HttpError::NicNotReady    => "http: NIC not ready",
-                crate::net::http::HttpError::DnsTimeout     => "http: DNS timeout",
+                crate::net::http::HttpError::NicNotReady => "http: NIC not ready",
+                crate::net::http::HttpError::DnsTimeout => "http: DNS timeout",
                 crate::net::http::HttpError::ConnectTimeout => "http: connect timeout",
-                crate::net::http::HttpError::SendFailed     => "http: send failed",
-                crate::net::http::HttpError::ResponseTimeout=> "http: response timeout",
-                crate::net::http::HttpError::BufferTooSmall => "http: response truncated (buffer full)",
+                crate::net::http::HttpError::SendFailed => "http: send failed",
+                crate::net::http::HttpError::ResponseTimeout => "http: response timeout",
+                crate::net::http::HttpError::BufferTooSmall => {
+                    "http: response truncated (buffer full)"
+                }
             };
             TERM.lock().push_str(msg, ERR_COL);
         }
@@ -1394,13 +1591,15 @@ fn cmd_http(args: &str) {
             let mut lines_shown = 0usize;
             const MAX_LINES: usize = 40;
             while line_start < body.len() && lines_shown < MAX_LINES {
-                let line_end = body[line_start..].iter()
+                let line_end = body[line_start..]
+                    .iter()
                     .position(|&b| b == b'\n')
                     .map(|i| line_start + i + 1)
                     .unwrap_or(body.len());
                 let line_bytes = &body[line_start..line_end];
                 // Strip trailing \r\n and non-printable bytes for display
-                let printable_end = line_bytes.iter()
+                let printable_end = line_bytes
+                    .iter()
                     .rposition(|&b| b > b' ')
                     .map(|i| i + 1)
                     .unwrap_or(0);
@@ -1427,7 +1626,10 @@ fn cmd_http(args: &str) {
                 let sl = sfx.len().min(LINE_BUF - p2);
                 buf2[p2..p2 + sl].copy_from_slice(&sfx[..sl]);
                 p2 += sl;
-                TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&buf2[..p2]) }, 0x88CCFF);
+                TERM.lock().push_str(
+                    unsafe { core::str::from_utf8_unchecked(&buf2[..p2]) },
+                    0x88CCFF,
+                );
             }
         }
     }
@@ -1452,7 +1654,11 @@ fn cmd_netcheck(args: &str) {
                 ok = true;
                 v = v.saturating_mul(10).saturating_add((b - b'0') as usize);
             }
-            if ok { v.clamp(1, 9) } else { 3 }
+            if ok {
+                v.clamp(1, 9)
+            } else {
+                3
+            }
         }
     };
 
@@ -1481,9 +1687,15 @@ fn cmd_netcheck(args: &str) {
         hdr[..pl].copy_from_slice(&pfx[..pl]);
         hp += pl;
         hp += write_dec(&mut hdr[hp..], (i + 1) as u64);
-        if hp < LINE_BUF { hdr[hp] = b'/'; hp += 1; }
+        if hp < LINE_BUF {
+            hdr[hp] = b'/';
+            hp += 1;
+        }
         hp += write_dec(&mut hdr[hp..], loops as u64);
-        TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&hdr[..hp]) }, 0x88CCFF);
+        TERM.lock().push_str(
+            unsafe { core::str::from_utf8_unchecked(&hdr[..hp]) },
+            0x88CCFF,
+        );
 
         // Check 1: Ping gateway
         let ping_ok = {
@@ -1510,35 +1722,61 @@ fn cmd_netcheck(args: &str) {
                 None => false,
             }
         };
-        if ping_ok { ping_pass += 1; }
-        TERM.lock().push_str(if ping_ok { "  ping: pass" } else { "  ping: fail" },
-                             if ping_ok { 0x66FF66 } else { ERR_COL });
+        if ping_ok {
+            ping_pass += 1;
+        }
+        TERM.lock().push_str(
+            if ping_ok {
+                "  ping: pass"
+            } else {
+                "  ping: fail"
+            },
+            if ping_ok { 0x66FF66 } else { ERR_COL },
+        );
 
         // Check 2: DNS
         let dns_ok = crate::net::dns::resolve("example.com", 3000).is_ok();
-        if dns_ok { dns_pass += 1; }
-        TERM.lock().push_str(if dns_ok { "  dns:  pass" } else { "  dns:  fail" },
-                             if dns_ok { 0x66FF66 } else { ERR_COL });
+        if dns_ok {
+            dns_pass += 1;
+        }
+        TERM.lock().push_str(
+            if dns_ok {
+                "  dns:  pass"
+            } else {
+                "  dns:  fail"
+            },
+            if dns_ok { 0x66FF66 } else { ERR_COL },
+        );
 
         // Check 3: HTTP
         static mut NETCHECK_HTTP_BUF: [u8; 4096] = [0u8; 4096];
-        let http_result = crate::net::http::get("example.com", 80, "/", unsafe { &mut NETCHECK_HTTP_BUF });
+        let http_result =
+            crate::net::http::get("example.com", 80, "/", unsafe { &mut NETCHECK_HTTP_BUF });
         let http_ok = match http_result {
             Ok(n) => n > 0,
             Err(crate::net::http::HttpError::BufferTooSmall) => true,
             Err(_) => false,
         };
-        if http_ok { http_pass += 1; }
-        let http_msg: &str = if http_ok { "  http: pass" } else {
+        if http_ok {
+            http_pass += 1;
+        }
+        let http_msg: &str = if http_ok {
+            "  http: pass"
+        } else {
             match http_result {
-                Err(crate::net::http::HttpError::ConnectTimeout) => "  http: fail (connect timeout)",
-                Err(crate::net::http::HttpError::SendFailed)     => "  http: fail (send failed)",
-                Err(crate::net::http::HttpError::ResponseTimeout)=> "  http: fail (response timeout)",
-                Err(crate::net::http::HttpError::DnsTimeout)     => "  http: fail (dns timeout)",
+                Err(crate::net::http::HttpError::ConnectTimeout) => {
+                    "  http: fail (connect timeout)"
+                }
+                Err(crate::net::http::HttpError::SendFailed) => "  http: fail (send failed)",
+                Err(crate::net::http::HttpError::ResponseTimeout) => {
+                    "  http: fail (response timeout)"
+                }
+                Err(crate::net::http::HttpError::DnsTimeout) => "  http: fail (dns timeout)",
                 _ => "  http: fail",
             }
         };
-        TERM.lock().push_str(http_msg, if http_ok { 0x66FF66 } else { ERR_COL });
+        TERM.lock()
+            .push_str(http_msg, if http_ok { 0x66FF66 } else { ERR_COL });
     }
 
     // Summary
@@ -1548,9 +1786,19 @@ fn cmd_netcheck(args: &str) {
     l1[..pfx1.len()].copy_from_slice(pfx1);
     p1 += pfx1.len();
     p1 += write_dec(&mut l1[p1..], ping_pass as u64);
-    if p1 < LINE_BUF { l1[p1] = b'/'; p1 += 1; }
+    if p1 < LINE_BUF {
+        l1[p1] = b'/';
+        p1 += 1;
+    }
     p1 += write_dec(&mut l1[p1..], loops as u64);
-    TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&l1[..p1]) }, if ping_pass == loops { 0x66FF66 } else { ERR_COL });
+    TERM.lock().push_str(
+        unsafe { core::str::from_utf8_unchecked(&l1[..p1]) },
+        if ping_pass == loops {
+            0x66FF66
+        } else {
+            ERR_COL
+        },
+    );
 
     let mut l2 = [0u8; LINE_BUF];
     let mut p2 = 0usize;
@@ -1558,9 +1806,15 @@ fn cmd_netcheck(args: &str) {
     l2[..pfx2.len()].copy_from_slice(pfx2);
     p2 += pfx2.len();
     p2 += write_dec(&mut l2[p2..], dns_pass as u64);
-    if p2 < LINE_BUF { l2[p2] = b'/'; p2 += 1; }
+    if p2 < LINE_BUF {
+        l2[p2] = b'/';
+        p2 += 1;
+    }
     p2 += write_dec(&mut l2[p2..], loops as u64);
-    TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&l2[..p2]) }, if dns_pass == loops { 0x66FF66 } else { ERR_COL });
+    TERM.lock().push_str(
+        unsafe { core::str::from_utf8_unchecked(&l2[..p2]) },
+        if dns_pass == loops { 0x66FF66 } else { ERR_COL },
+    );
 
     let mut l3 = [0u8; LINE_BUF];
     let mut p3 = 0usize;
@@ -1568,16 +1822,27 @@ fn cmd_netcheck(args: &str) {
     l3[..pfx3.len()].copy_from_slice(pfx3);
     p3 += pfx3.len();
     p3 += write_dec(&mut l3[p3..], http_pass as u64);
-    if p3 < LINE_BUF { l3[p3] = b'/'; p3 += 1; }
+    if p3 < LINE_BUF {
+        l3[p3] = b'/';
+        p3 += 1;
+    }
     p3 += write_dec(&mut l3[p3..], loops as u64);
-    TERM.lock().push_str(unsafe { core::str::from_utf8_unchecked(&l3[..p3]) }, if http_pass == loops { 0x66FF66 } else { ERR_COL });
+    TERM.lock().push_str(
+        unsafe { core::str::from_utf8_unchecked(&l3[..p3]) },
+        if http_pass == loops {
+            0x66FF66
+        } else {
+            ERR_COL
+        },
+    );
 }
 
 /// Find the offset of the HTTP body (after \r\n\r\n).
 fn find_body_start(data: &[u8]) -> Option<usize> {
     let mut i = 0usize;
     while i + 3 < data.len() {
-        if data[i] == b'\r' && data[i+1] == b'\n' && data[i+2] == b'\r' && data[i+3] == b'\n' {
+        if data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n'
+        {
             return Some(i + 4);
         }
         i += 1;
@@ -1588,10 +1853,10 @@ fn find_body_start(data: &[u8]) -> Option<usize> {
 fn cmd_exec(args: &str) {
     let prog = args.trim();
     let (elf, prog_name): (&[u8], &'static str) = match prog {
-        "hello"    => (crate::loader::HELLO_ELF, "hello"),
-        "gui"      => (crate::loader::GUI_DEMO_ELF, "gui"),
-        "nxbomb"   => (crate::loader::NXBOMB_ELF, "nxbomb"),
-        "stackbomb"=> (crate::loader::STACKBOMB_ELF, "stackbomb"),
+        "hello" => (crate::loader::HELLO_ELF, "hello"),
+        "gui" => (crate::loader::GUI_DEMO_ELF, "gui"),
+        "nxbomb" => (crate::loader::NXBOMB_ELF, "nxbomb"),
+        "stackbomb" => (crate::loader::STACKBOMB_ELF, "stackbomb"),
         _ => {
             let mut t = TERM.lock();
             t.push_str("exec: unknown program", ERR_COL);
@@ -1602,11 +1867,13 @@ fn cmd_exec(args: &str) {
 
     // Reject if a user process is already running (shared page tables, fixed vaddrs).
     if crate::process::count_running_user() > 0 {
-        TERM.lock().push_str("exec: a user process is already running", ERR_COL);
+        TERM.lock()
+            .push_str("exec: a user process is already running", ERR_COL);
         return;
     }
 
-    match crate::process::spawn_elf_process(prog_name, elf, crate::user::USER_TASK_STACK_VIRT, 128) {
+    match crate::process::spawn_elf_process(prog_name, elf, crate::user::USER_TASK_STACK_VIRT, 128)
+    {
         Some(pid) => {
             let mut t = TERM.lock();
             let mut buf = [0u8; LINE_BUF];
@@ -1636,22 +1903,30 @@ fn cmd_ps() {
         let e = &entries[i];
         let state_str: &[u8] = match e.state {
             crate::process::ProcessState::Running => b"running ",
-            crate::process::ProcessState::Exited  => b"exited  ",
-            crate::process::ProcessState::Empty   => b"empty   ",
+            crate::process::ProcessState::Exited => b"exited  ",
+            crate::process::ProcessState::Empty => b"empty   ",
         };
         // Build "PID  STATE    TASK  name"
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         p += write_dec(&mut buf[p..], e.pid);
-        buf[p] = b' '; p += 1;
+        buf[p] = b' ';
+        p += 1;
         let sl = state_str.len().min(LINE_BUF - p);
-        buf[p..p + sl].copy_from_slice(&state_str[..sl]); p += sl;
+        buf[p..p + sl].copy_from_slice(&state_str[..sl]);
+        p += sl;
         p += write_dec(&mut buf[p..], e.task_id);
-        buf[p] = b' '; p += 1;
+        buf[p] = b' ';
+        p += 1;
         let nl = e.name_len.min(LINE_BUF - p);
-        buf[p..p + nl].copy_from_slice(&e.name[..nl]); p += nl;
+        buf[p..p + nl].copy_from_slice(&e.name[..nl]);
+        p += nl;
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
-        let col = if e.state == crate::process::ProcessState::Running { 0x66FF66 } else { 0xAAAAAA };
+        let col = if e.state == crate::process::ProcessState::Running {
+            0x66FF66
+        } else {
+            0xAAAAAA
+        };
         t.push_str(s, col);
     }
 }
@@ -1660,7 +1935,9 @@ fn cmd_kill(args: &str) {
     let pid_str = args.trim();
     let mut pid_val = 0u64;
     for b in pid_str.bytes() {
-        if b < b'0' || b > b'9' { break; }
+        if b < b'0' || b > b'9' {
+            break;
+        }
         pid_val = pid_val * 10 + (b - b'0') as u64;
     }
     if pid_val == 0 {
@@ -1691,7 +1968,9 @@ fn cmd_kill(args: &str) {
 
 /// Returns the current FAT32 cluster (root if at /).
 fn cwd_cluster() -> Option<u32> {
-    if !crate::fat32::is_mounted() { return None; }
+    if !crate::fat32::is_mounted() {
+        return None;
+    }
     let t = TERM.lock();
     if t.cwd_plen == 0 {
         Some(crate::fat32::root_cluster())
@@ -1702,11 +1981,15 @@ fn cwd_cluster() -> Option<u32> {
 
 /// Walk a slash-separated path from root and return its cluster.
 fn walk_path_to_cluster(path: &str) -> Option<u32> {
-    if !crate::fat32::is_mounted() { return None; }
+    if !crate::fat32::is_mounted() {
+        return None;
+    }
     let mut cluster = crate::fat32::root_cluster();
     for seg in path.split('/').filter(|s| !s.is_empty()) {
         let de = crate::fat32::find_in_dir(cluster, seg.as_bytes())?;
-        if !de.is_dir { return None; }
+        if !de.is_dir {
+            return None;
+        }
         cluster = de.cluster;
     }
     Some(cluster)
@@ -1715,7 +1998,9 @@ fn walk_path_to_cluster(path: &str) -> Option<u32> {
 /// Resolve an optional path argument to its FAT32 cluster.
 /// If path is empty, returns cwd. Otherwise resolves relative to cwd.
 fn resolve_cluster_for_path(path: &str) -> Option<u32> {
-    if path.is_empty() { return cwd_cluster(); }
+    if path.is_empty() {
+        return cwd_cluster();
+    }
     if path.starts_with('/') {
         // absolute path
         return walk_path_to_cluster(path);
@@ -1723,12 +2008,21 @@ fn resolve_cluster_for_path(path: &str) -> Option<u32> {
     // relative: prepend cwd
     let parent = cwd_cluster()?;
     let de = crate::fat32::find_in_dir(parent, path.as_bytes())?;
-    if de.is_dir { Some(de.cluster) } else { None }
+    if de.is_dir {
+        Some(de.cluster)
+    } else {
+        None
+    }
 }
 
 fn write_dec(buf: &mut [u8], mut n: u64) -> usize {
-    if buf.is_empty() { return 0; }
-    if n == 0 { buf[0] = b'0'; return 1; }
+    if buf.is_empty() {
+        return 0;
+    }
+    if n == 0 {
+        buf[0] = b'0';
+        return 1;
+    }
     let mut tmp = [0u8; 20];
     let mut pos = tmp.len();
     while n > 0 {
@@ -1743,7 +2037,9 @@ fn write_dec(buf: &mut [u8], mut n: u64) -> usize {
 
 fn write_hex64(buf: &mut [u8], n: u64) -> usize {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    if buf.len() < 18 { return 0; }
+    if buf.len() < 18 {
+        return 0;
+    }
     buf[0] = b'0';
     buf[1] = b'x';
     for i in 0..16 {
@@ -1755,8 +2051,8 @@ fn write_hex64(buf: &mut [u8], n: u64) -> usize {
 
 fn cmd_memprobe() {
     use crate::memory::paging::{
-        current_cr3_phys, is_user_range, is_user_virt, is_kernel_virt,
-        lookup_page_entry_current, KERNEL_SPACE_BASE, PageTableFlags, USER_SPACE_LIMIT,
+        current_cr3_phys, is_kernel_virt, is_user_range, is_user_virt, lookup_page_entry_current,
+        PageTableFlags, KERNEL_SPACE_BASE, USER_SPACE_LIMIT,
     };
 
     let mut t = TERM.lock();
@@ -1767,7 +2063,8 @@ fn cmd_memprobe() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  USER_SPACE_LIMIT  = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_hex64(&mut buf[p..], USER_SPACE_LIMIT as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1776,7 +2073,8 @@ fn cmd_memprobe() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  KERNEL_SPACE_BASE = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_hex64(&mut buf[p..], KERNEL_SPACE_BASE as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1785,33 +2083,56 @@ fn cmd_memprobe() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  current CR3       = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_hex64(&mut buf[p..], current_cr3_phys() as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
     }
 
     // Address-space classifier checks
-    let user_addr  = 0x0000_0000_0040_0000usize;
+    let user_addr = 0x0000_0000_0040_0000usize;
     let kernel_addr = KERNEL_SPACE_BASE;
-    let bad_addr   = USER_SPACE_LIMIT; // exactly the boundary, must be neither user nor a valid range
+    let bad_addr = USER_SPACE_LIMIT; // exactly the boundary, must be neither user nor a valid range
 
     let line = |t: &mut TermState, label: &[u8], ok: bool| {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
-        buf[..label.len()].copy_from_slice(label); p += label.len();
+        buf[..label.len()].copy_from_slice(label);
+        p += label.len();
         let tail: &[u8] = if ok { b"PASS" } else { b"FAIL" };
         let n = tail.len().min(LINE_BUF - p);
-        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        buf[p..p + n].copy_from_slice(&tail[..n]);
+        p += n;
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, if ok { 0x66FF66 } else { ERR_COL });
     };
 
-    line(&mut t, b"  is_user_virt(user_addr)        = ", is_user_virt(user_addr));
-    line(&mut t, b"  is_kernel_virt(kernel_addr)    = ", is_kernel_virt(kernel_addr));
-    line(&mut t, b"  !is_user_virt(kernel_addr)     = ", !is_user_virt(kernel_addr));
-    line(&mut t, b"  !is_user_range(kernel_addr,1)  = ", !is_user_range(kernel_addr, 1));
-    line(&mut t, b"  !is_user_range(bad_addr,1)     = ", !is_user_range(bad_addr, 1));
+    line(
+        &mut t,
+        b"  is_user_virt(user_addr)        = ",
+        is_user_virt(user_addr),
+    );
+    line(
+        &mut t,
+        b"  is_kernel_virt(kernel_addr)    = ",
+        is_kernel_virt(kernel_addr),
+    );
+    line(
+        &mut t,
+        b"  !is_user_virt(kernel_addr)     = ",
+        !is_user_virt(kernel_addr),
+    );
+    line(
+        &mut t,
+        b"  !is_user_range(kernel_addr,1)  = ",
+        !is_user_range(kernel_addr, 1),
+    );
+    line(
+        &mut t,
+        b"  !is_user_range(bad_addr,1)     = ",
+        !is_user_range(bad_addr, 1),
+    );
 
     // Page-table entry checks: kernel mappings must NOT be USER_ACCESSIBLE.
     let kernel_probe = unsafe { lookup_page_entry_current(KERNEL_SPACE_BASE + 0x1000) };
@@ -1819,7 +2140,11 @@ fn cmd_memprobe() {
         Some(entry) => (entry & PageTableFlags::USER_ACCESSIBLE) == 0,
         None => true, // unmapped is also "not user-accessible"
     };
-    line(&mut t, b"  kernel page lacks USER bit     = ", kernel_user_bit_clear);
+    line(
+        &mut t,
+        b"  kernel page lacks USER bit     = ",
+        kernel_user_bit_clear,
+    );
 
     // EFER.NXE — required for EXECUTE_DISABLE bit to be honored.
     let efer = crate::arch::x86_64::sysentry::efer();
@@ -1838,11 +2163,23 @@ fn cmd_memprobe() {
     let umip_avail = crate::arch::x86_64::cpu::has_umip();
     line(&mut t, b"  CR0.WP enabled                 = ", wp_on);
     // SMEP: PASS if enabled, or PASS if not supported by host (TCG often).
-    line(&mut t, b"  CR4.SMEP enabled               = ", smep_on || !smep_avail);
+    line(
+        &mut t,
+        b"  CR4.SMEP enabled               = ",
+        smep_on || !smep_avail,
+    );
     // UMIP: same gating.
-    line(&mut t, b"  CR4.UMIP enabled               = ", umip_on || !umip_avail);
+    line(
+        &mut t,
+        b"  CR4.UMIP enabled               = ",
+        umip_on || !umip_avail,
+    );
     // SMAP: PASS if enabled, or PASS if not supported.
-    line(&mut t, b"  CR4.SMAP enabled               = ", smap_on || !smap_avail);
+    line(
+        &mut t,
+        b"  CR4.SMAP enabled               = ",
+        smap_on || !smap_avail,
+    );
     let _ = smap_avail; // suppress unused warning when SMAP is on
     let _ = smap_on;
 
@@ -1852,7 +2189,8 @@ fn cmd_memprobe() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  user processes tracked        = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], count as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1861,8 +2199,12 @@ fn cmd_memprobe() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  free physical frames          = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
-        p += write_dec(&mut buf[p..], crate::memory::frame_allocator::available_frames() as u64);
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
+        p += write_dec(
+            &mut buf[p..],
+            crate::memory::frame_allocator::available_frames() as u64,
+        );
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
     }
@@ -1871,9 +2213,11 @@ fn cmd_memprobe() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  syscall authz checks/denied   = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], snap.checks);
-        buf[p] = b'/'; p += 1;
+        buf[p] = b'/';
+        p += 1;
         p += write_dec(&mut buf[p..], snap.denied);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1885,8 +2229,7 @@ fn cmd_memprobe() {
 fn cmd_memtest() {
     use crate::memory::paging::{is_user_range, KERNEL_SPACE_BASE, USER_SPACE_LIMIT};
     use crate::syscall::{
-        dispatch, SYS_WRITE_CONSOLE, SYS_SEND_MSG, SYS_RECV_MSG,
-        SYS_GET_FB_INFO, SYS_DRAW_TEXT,
+        dispatch, SYS_DRAW_TEXT, SYS_GET_FB_INFO, SYS_RECV_MSG, SYS_SEND_MSG, SYS_WRITE_CONSOLE,
     };
 
     let mut t = TERM.lock();
@@ -1899,28 +2242,65 @@ fn cmd_memtest() {
         p += label.len().min(LINE_BUF);
         let tail: &[u8] = if pass { b"PASS" } else { b"FAIL" };
         let n = tail.len().min(LINE_BUF.saturating_sub(p));
-        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        buf[p..p + n].copy_from_slice(&tail[..n]);
+        p += n;
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, if pass { 0x66FF66 } else { ERR_COL });
     };
 
     // Range checks (purely arithmetic, deterministic).
-    line(&mut t, b"  is_user_range(USER_LIMIT,1)   rejects? ", !is_user_range(USER_SPACE_LIMIT, 1));
-    line(&mut t, b"  is_user_range(KERNEL_BASE,1)  rejects? ", !is_user_range(KERNEL_SPACE_BASE, 1));
-    line(&mut t, b"  is_user_range(USER_LIMIT-8,16) rejects? ", !is_user_range(USER_SPACE_LIMIT - 8, 16));
+    line(
+        &mut t,
+        b"  is_user_range(USER_LIMIT,1)   rejects? ",
+        !is_user_range(USER_SPACE_LIMIT, 1),
+    );
+    line(
+        &mut t,
+        b"  is_user_range(KERNEL_BASE,1)  rejects? ",
+        !is_user_range(KERNEL_SPACE_BASE, 1),
+    );
+    line(
+        &mut t,
+        b"  is_user_range(USER_LIMIT-8,16) rejects? ",
+        !is_user_range(USER_SPACE_LIMIT - 8, 16),
+    );
 
     // Syscall validation: each must reject and return 0 (failure sentinel).
     // Running in kernel CR3, so user-range addresses without backing page-tables also fail.
     let kernel_ptr = KERNEL_SPACE_BASE as u64;
 
-    line(&mut t, b"  sys_write_console(KERNEL_PTR) rejects? ", dispatch(SYS_WRITE_CONSOLE, kernel_ptr, 8, 0, 0, 0, 0) == 0);
-    line(&mut t, b"  sys_write_console(NULL)       rejects? ", dispatch(SYS_WRITE_CONSOLE, 0, 8, 0, 0, 0, 0) == 0);
-    line(&mut t, b"  sys_send_msg(KERNEL_PTR)      rejects? ", dispatch(SYS_SEND_MSG, kernel_ptr, 8, 0, 0, 0, 0) == 0);
-    line(&mut t, b"  sys_get_fb_info(KERNEL_PTR)   rejects? ", dispatch(SYS_GET_FB_INFO, kernel_ptr, 0, 0, 0, 0, 0) == 0);
-    line(&mut t, b"  sys_draw_text(KERNEL_PTR)     rejects? ", dispatch(SYS_DRAW_TEXT, kernel_ptr, 4, 0, 0, 0xFFFFFF, 0) == 0);
+    line(
+        &mut t,
+        b"  sys_write_console(KERNEL_PTR) rejects? ",
+        dispatch(SYS_WRITE_CONSOLE, kernel_ptr, 8, 0, 0, 0, 0) == 0,
+    );
+    line(
+        &mut t,
+        b"  sys_write_console(NULL)       rejects? ",
+        dispatch(SYS_WRITE_CONSOLE, 0, 8, 0, 0, 0, 0) == 0,
+    );
+    line(
+        &mut t,
+        b"  sys_send_msg(KERNEL_PTR)      rejects? ",
+        dispatch(SYS_SEND_MSG, kernel_ptr, 8, 0, 0, 0, 0) == 0,
+    );
+    line(
+        &mut t,
+        b"  sys_get_fb_info(KERNEL_PTR)   rejects? ",
+        dispatch(SYS_GET_FB_INFO, kernel_ptr, 0, 0, 0, 0, 0) == 0,
+    );
+    line(
+        &mut t,
+        b"  sys_draw_text(KERNEL_PTR)     rejects? ",
+        dispatch(SYS_DRAW_TEXT, kernel_ptr, 4, 0, 0, 0xFFFFFF, 0) == 0,
+    );
 
     // recv_msg with a kernel ptr must also fail the writable check; len returned must be 0.
-    line(&mut t, b"  sys_recv_msg(KERNEL_PTR)      rejects? ", dispatch(SYS_RECV_MSG, kernel_ptr, 0, 0, 0, 0, 0) == 0);
+    line(
+        &mut t,
+        b"  sys_recv_msg(KERNEL_PTR)      rejects? ",
+        dispatch(SYS_RECV_MSG, kernel_ptr, 0, 0, 0, 0, 0) == 0,
+    );
 
     t.push_str("memtest: done", TEXT_NORM);
 }
@@ -1937,10 +2317,16 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let pfx = b"  vendor : ";
         let mut p = 0usize;
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         for &b in &v[..12] {
-            if b == 0 { break; }
-            if p < LINE_BUF { buf[p] = b; p += 1; }
+            if b == 0 {
+                break;
+            }
+            if p < LINE_BUF {
+                buf[p] = b;
+                p += 1;
+            }
         }
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1952,13 +2338,21 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let pfx = b"  brand  : ";
         let mut p = 0usize;
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         // Skip leading spaces in brand.
         let mut start = 0usize;
-        while start < br.len() && br[start] == b' ' { start += 1; }
+        while start < br.len() && br[start] == b' ' {
+            start += 1;
+        }
         for &b in &br[start..] {
-            if b == 0 { break; }
-            if p < LINE_BUF { buf[p] = b; p += 1; }
+            if b == 0 {
+                break;
+            }
+            if p < LINE_BUF {
+                buf[p] = b;
+                p += 1;
+            }
         }
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1970,11 +2364,14 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  family/model/step = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], f as u64);
-        buf[p] = b'/'; p += 1;
+        buf[p] = b'/';
+        p += 1;
         p += write_dec(&mut buf[p..], m as u64);
-        buf[p] = b'/'; p += 1;
+        buf[p] = b'/';
+        p += 1;
         p += write_dec(&mut buf[p..], s as u64);
         let line_str = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(line_str, TEXT_NORM);
@@ -1985,7 +2382,8 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  current LAPIC ID    = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], apic::lapic_id() as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -1997,7 +2395,8 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  APIC_BASE phys      = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_hex64(&mut buf[p..], base.phys);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -2006,10 +2405,12 @@ fn cmd_cpuinfo() {
     let line = |t: &mut TermState, label: &[u8], ok: bool| {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
-        buf[..label.len()].copy_from_slice(label); p += label.len();
+        buf[..label.len()].copy_from_slice(label);
+        p += label.len();
         let tail: &[u8] = if ok { b"yes" } else { b"no" };
         let n = tail.len().min(LINE_BUF - p);
-        buf[p..p + n].copy_from_slice(&tail[..n]); p += n;
+        buf[p..p + n].copy_from_slice(&tail[..n]);
+        p += n;
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, if ok { 0x66FF66 } else { TEXT_NORM });
     };
@@ -2019,7 +2420,11 @@ fn cmd_cpuinfo() {
     line(&mut t, b"  x2APIC supported    = ", apic::has_x2apic());
     line(&mut t, b"  x2APIC enabled      = ", base.x2apic_enable);
     line(&mut t, b"  APIC feature flag   = ", apic::has_apic());
-    line(&mut t, b"  invariant TSC       = ", apic::has_invariant_tsc());
+    line(
+        &mut t,
+        b"  invariant TSC       = ",
+        apic::has_invariant_tsc(),
+    );
     line(&mut t, b"  long mode           = ", apic::has_long_mode());
 
     // RSDP from Limine.
@@ -2027,10 +2432,17 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  ACPI RSDP           = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         match crate::boot::protocol::rsdp_address() {
-            Some(addr) => { p += write_hex64(&mut buf[p..], addr as u64); }
-            None => { let m = b"<missing>"; buf[p..p+m.len()].copy_from_slice(m); p += m.len(); }
+            Some(addr) => {
+                p += write_hex64(&mut buf[p..], addr as u64);
+            }
+            None => {
+                let m = b"<missing>";
+                buf[p..p + m.len()].copy_from_slice(m);
+                p += m.len();
+            }
         }
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -2041,16 +2453,23 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  CPUs reported       = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         match apic::topology() {
             Some((bsp, n)) => {
                 p += write_dec(&mut buf[p..], n as u64);
                 let mid = b" (BSP LAPIC ID ";
-                buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+                buf[p..p + mid.len()].copy_from_slice(mid);
+                p += mid.len();
                 p += write_dec(&mut buf[p..], bsp as u64);
-                buf[p] = b')'; p += 1;
+                buf[p] = b')';
+                p += 1;
             }
-            None => { let m = b"<unavailable>"; buf[p..p+m.len()].copy_from_slice(m); p += m.len(); }
+            None => {
+                let m = b"<unavailable>";
+                buf[p..p + m.len()].copy_from_slice(m);
+                p += m.len();
+            }
         }
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -2059,16 +2478,21 @@ fn cmd_cpuinfo() {
     // Per-CPU table.
     {
         use crate::boot::protocol::CpuEntry;
-        let mut entries = [CpuEntry { acpi_id: 0, lapic_id: 0 }; 16];
+        let mut entries = [CpuEntry {
+            acpi_id: 0,
+            lapic_id: 0,
+        }; 16];
         let n = crate::boot::protocol::mp_cpus(&mut entries);
         for i in 0..n {
             let mut buf = [0u8; LINE_BUF];
             let mut p = 0usize;
             let pfx = b"    cpu acpi_id=";
-            buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+            buf[..pfx.len()].copy_from_slice(pfx);
+            p += pfx.len();
             p += write_dec(&mut buf[p..], entries[i].acpi_id as u64);
             let mid = b" lapic_id=";
-            buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+            buf[p..p + mid.len()].copy_from_slice(mid);
+            p += mid.len();
             p += write_dec(&mut buf[p..], entries[i].lapic_id as u64);
             let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
             t.push_str(s, TEXT_NORM);
@@ -2080,12 +2504,19 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"  MADT revision      = ";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], crate::acpi::madt_revision() as u64);
         let mid = b"  PCAT-compat=";
-        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
-        let v: &[u8] = if crate::acpi::pcat_compat() { b"yes" } else { b"no" };
-        buf[p..p+v.len()].copy_from_slice(v); p += v.len();
+        buf[p..p + mid.len()].copy_from_slice(mid);
+        p += mid.len();
+        let v: &[u8] = if crate::acpi::pcat_compat() {
+            b"yes"
+        } else {
+            b"no"
+        };
+        buf[p..p + v.len()].copy_from_slice(v);
+        p += v.len();
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
     }
@@ -2093,13 +2524,16 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"    ioapic id=";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], io.id as u64);
         let mid = b" addr=";
-        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        buf[p..p + mid.len()].copy_from_slice(mid);
+        p += mid.len();
         p += write_hex64(&mut buf[p..], io.address as u64);
         let mid = b" gsi_base=";
-        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        buf[p..p + mid.len()].copy_from_slice(mid);
+        p += mid.len();
         p += write_dec(&mut buf[p..], io.gsi_base as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -2108,16 +2542,20 @@ fn cmd_cpuinfo() {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
         let pfx = b"    irq_override bus=";
-        buf[..pfx.len()].copy_from_slice(pfx); p += pfx.len();
+        buf[..pfx.len()].copy_from_slice(pfx);
+        p += pfx.len();
         p += write_dec(&mut buf[p..], ov.bus as u64);
         let mid = b" irq=";
-        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        buf[p..p + mid.len()].copy_from_slice(mid);
+        p += mid.len();
         p += write_dec(&mut buf[p..], ov.source_irq as u64);
         let mid = b" gsi=";
-        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        buf[p..p + mid.len()].copy_from_slice(mid);
+        p += mid.len();
         p += write_dec(&mut buf[p..], ov.gsi as u64);
         let mid = b" flags=";
-        buf[p..p+mid.len()].copy_from_slice(mid); p += mid.len();
+        buf[p..p + mid.len()].copy_from_slice(mid);
+        p += mid.len();
         p += write_hex64(&mut buf[p..], ov.flags as u64);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -2130,7 +2568,10 @@ fn cmd_apictest() {
     use crate::arch::x86_64::{apic, interrupts};
 
     let mut t = TERM.lock();
-    t.push_str("apictest: switching tick source PIT -> LAPIC -> PIT", TEXT_NORM);
+    t.push_str(
+        "apictest: switching tick source PIT -> LAPIC -> PIT",
+        TEXT_NORM,
+    );
 
     if !apic::lapic_calibrated() {
         t.push_str("  LAPIC timer not calibrated; aborting.", ERR_COL);
@@ -2140,7 +2581,8 @@ fn cmd_apictest() {
     let line_kv = |t: &mut TermState, label: &[u8], value: u64| {
         let mut buf = [0u8; LINE_BUF];
         let mut p = 0usize;
-        buf[..label.len()].copy_from_slice(label); p += label.len();
+        buf[..label.len()].copy_from_slice(label);
+        p += label.len();
         p += write_dec(&mut buf[p..], value);
         let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
         t.push_str(s, TEXT_NORM);
@@ -2207,11 +2649,15 @@ fn cmd_apictest() {
     t.push_str("  PIT tick source RESTORED", 0x66FF66);
 
     if lapic_silent {
-        t.push_str("apictest: FAIL (LAPIC ISR did not fire within spin cap)", ERR_COL);
+        t.push_str(
+            "apictest: FAIL (LAPIC ISR did not fire within spin cap)",
+            ERR_COL,
+        );
         return;
     }
 
-    let ok = lapic_delta > 0 && (lapic_delta as i64 - pit_delta as i64).abs() <= (pit_delta as i64 / 4 + 5);
+    let ok = lapic_delta > 0
+        && (lapic_delta as i64 - pit_delta as i64).abs() <= (pit_delta as i64 / 4 + 5);
     if ok {
         t.push_str("apictest: PASS", 0x66FF66);
     } else {
@@ -2234,10 +2680,18 @@ impl TerminalApp {
 }
 
 impl App for TerminalApp {
-    fn title(&self) -> &str { "Terminal" }
-    fn preferred_size(&self) -> (usize, usize) { (700, 460) }
-    fn app_id(&self) -> &'static str { "terminal" }
-    fn allow_multiple_instances(&self) -> bool { false }
+    fn title(&self) -> &str {
+        "Terminal"
+    }
+    fn preferred_size(&self) -> (usize, usize) {
+        (700, 460)
+    }
+    fn app_id(&self) -> &'static str {
+        "terminal"
+    }
+    fn allow_multiple_instances(&self) -> bool {
+        false
+    }
 
     fn render(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
         render(cx, cy, cw, ch);
@@ -2253,10 +2707,10 @@ impl App for TerminalApp {
 
     fn handle_key(&mut self, key: crate::input::Key) -> AppAction {
         match handle_key(key) {
-            TermAction::Close      => AppAction::Close,
-            TermAction::RedrawAll  => AppAction::RedrawAll,
+            TermAction::Close => AppAction::Close,
+            TermAction::RedrawAll => AppAction::RedrawAll,
             TermAction::RedrawInput => AppAction::RedrawInput,
-            TermAction::Nothing    => AppAction::Nothing,
+            TermAction::Nothing => AppAction::Nothing,
         }
     }
 
@@ -2270,5 +2724,7 @@ impl App for TerminalApp {
         AppAction::RedrawAll
     }
 
-    fn refresh_interval_ms(&self) -> Option<u64> { None }
+    fn refresh_interval_ms(&self) -> Option<u64> {
+        None
+    }
 }

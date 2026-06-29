@@ -2,15 +2,15 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
 // ── Real networking submodules ─────────────────────────────────────────────────
-pub mod eth;
-pub mod config;
 pub mod arp;
-pub mod ipv4;
-pub mod icmp;
-pub mod udp;
-pub mod tcp;
+pub mod config;
 pub mod dns;
+pub mod eth;
 pub mod http;
+pub mod icmp;
+pub mod ipv4;
+pub mod tcp;
+pub mod udp;
 
 // ── Public init ───────────────────────────────────────────────────────────────
 
@@ -24,26 +24,32 @@ pub fn init() {
 /// Dispatch a raw Ethernet frame (with header) to the appropriate protocol handler.
 /// Call this from the RX poll loop.
 pub fn dispatch_frame(frame: &[u8]) {
-    use eth::{EthHeader, ETH_ARP, ETH_IPV4, ETH_HDR};
-    let Some(hdr) = EthHeader::parse(frame) else { return; };
+    use eth::{EthHeader, ETH_ARP, ETH_HDR, ETH_IPV4};
+    let Some(hdr) = EthHeader::parse(frame) else {
+        return;
+    };
     let payload = &frame[ETH_HDR..];
     match hdr.etype {
-        ETH_ARP  => arp::handle_packet(payload),
+        ETH_ARP => arp::handle_packet(payload),
         ETH_IPV4 => handle_ipv4(payload),
-        _        => {}
+        _ => {}
     }
 }
 
 fn handle_ipv4(ip_pkt: &[u8]) {
-    use ipv4::{Ipv4Header, PROTO_ICMP, PROTO_UDP, PROTO_TCP};
-    let Some(hdr) = Ipv4Header::parse(ip_pkt) else { return; };
-    if !config::is_our_ip(hdr.dst) && hdr.dst != [255,255,255,255] { return; }
+    use ipv4::{Ipv4Header, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
+    let Some(hdr) = Ipv4Header::parse(ip_pkt) else {
+        return;
+    };
+    if !config::is_our_ip(hdr.dst) && hdr.dst != [255, 255, 255, 255] {
+        return;
+    }
     let payload = hdr.payload(ip_pkt);
     match hdr.protocol {
         PROTO_ICMP => icmp::handle_packet(hdr.src, payload),
-        PROTO_UDP  => udp::handle_packet(hdr.src, payload),
-        PROTO_TCP  => tcp::handle_segment(hdr.src, payload),
-        _          => {}
+        PROTO_UDP => udp::handle_packet(hdr.src, payload),
+        PROTO_TCP => tcp::handle_segment(hdr.src, payload),
+        _ => {}
     }
 }
 
@@ -117,7 +123,7 @@ pub mod driver {
 
     pub fn stats() -> (bool, bool, u64, u64) {
         let ready = crate::drivers::virtio_net::is_ready();
-        let link  = crate::drivers::virtio_net::link_up();
+        let link = crate::drivers::virtio_net::link_up();
         let (tx, rx) = crate::drivers::virtio_net::stats();
         (ready, link, tx, rx)
     }
@@ -213,7 +219,8 @@ pub mod socket {
     }
 
     const SOCKET_CAP: usize = 8;
-    static SOCKETS: Mutex<[SocketEntry; SOCKET_CAP]> = Mutex::new([SocketEntry::empty(); SOCKET_CAP]);
+    static SOCKETS: Mutex<[SocketEntry; SOCKET_CAP]> =
+        Mutex::new([SocketEntry::empty(); SOCKET_CAP]);
 
     static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 

@@ -34,7 +34,10 @@ struct GdtState {
 }
 
 impl GdtState {
-    fn new(double_fault_stack: &'static InterruptStack, privilege_stack: &'static PrivilegeStack) -> Self {
+    fn new(
+        double_fault_stack: &'static InterruptStack,
+        privilege_stack: &'static PrivilegeStack,
+    ) -> Self {
         Self {
             _double_fault_stack: double_fault_stack,
             _privilege_stack: privilege_stack,
@@ -59,7 +62,8 @@ fn gdt_state() -> &'static GdtState {
         let privilege_stack = Box::leak(Box::new(PrivilegeStack {
             _bytes: [0; PRIVILEGE_STACK_SIZE],
         }));
-        let state: &'static mut GdtState = Box::leak(Box::new(GdtState::new(double_fault_stack, privilege_stack)));
+        let state: &'static mut GdtState =
+            Box::leak(Box::new(GdtState::new(double_fault_stack, privilege_stack)));
         let stack_start = VirtAddr::from_ptr(state._double_fault_stack);
         let stack_end = stack_start + DOUBLE_FAULT_STACK_SIZE as u64;
         let privilege_stack_start = VirtAddr::from_ptr(state._privilege_stack);

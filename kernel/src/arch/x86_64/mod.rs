@@ -1,15 +1,17 @@
+pub mod apic;
 pub mod cpu;
 pub mod gdt;
 pub mod halt;
 pub mod interrupts;
-pub mod smp;
 pub mod ring3;
+pub mod smp;
 pub mod sysentry;
-pub mod apic;
 
-pub use gdt::{kernel_code_selector, kernel_data_selector, ring3_code_selector, ring3_data_selector};
-pub use interrupts::{uptime_ms, timer_hz, wait_until_ticks, sleep_ticks};
+pub use gdt::{
+    kernel_code_selector, kernel_data_selector, ring3_code_selector, ring3_data_selector,
+};
 pub use halt::power_off;
+pub use interrupts::{sleep_ticks, timer_hz, uptime_ms, wait_until_ticks};
 
 pub fn init() {
     cpu::early_init();

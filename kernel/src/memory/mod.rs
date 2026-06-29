@@ -1,6 +1,6 @@
 pub mod frame_allocator;
-pub mod paging;
 pub mod heap;
+pub mod paging;
 pub mod user_frames;
 
 pub fn init_from_boot() {
@@ -104,8 +104,7 @@ fn setup_paging_and_hhdm() {
         let flags = paging::PageTableFlags::new(
             paging::PageTableFlags::PRESENT | paging::PageTableFlags::WRITABLE,
         );
-        if let Err(e) = unsafe { mgr.map_page(kernel_virt + offset, kernel_phys + offset, flags) }
-        {
+        if let Err(e) = unsafe { mgr.map_page(kernel_virt + offset, kernel_phys + offset, flags) } {
             crate::serial::write_str("paging: kernel map err at offset=");
             crate::serial::write_u64(offset as u64);
             crate::serial::write_str(": ");
@@ -125,4 +124,3 @@ fn setup_paging_and_hhdm() {
     let heap_base = kernel_virt + KERNEL_MAP_SIZE;
     heap::init_virtual_heap(heap_base);
 }
-

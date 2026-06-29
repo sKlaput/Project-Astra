@@ -1,8 +1,7 @@
 /// Kernel heap allocator
-/// 
+///
 /// Simple bump allocator backed by physical frames
 /// Allocates frames and uses them as heap memory
-
 use crate::memory::frame_allocator::allocate_frame;
 use crate::memory::paging::{map_page_current, PageTableFlags};
 use core::alloc::{GlobalAlloc, Layout};
@@ -90,7 +89,9 @@ impl BumpAllocator {
 
         if layout.size() != 0
             && INJECT_ALLOC_FAILURES
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| count.checked_sub(1))
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                    count.checked_sub(1)
+                })
                 .is_ok()
         {
             LAST_ALLOC_FAILURE_WAS_INJECTED.store(true, Ordering::Relaxed);
@@ -230,7 +231,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         if !ptr.is_null() {
             unsafe {
-                HEAP_ALLOCATOR.lock().deallocate(NonNull::new_unchecked(ptr), layout);
+                HEAP_ALLOCATOR
+                    .lock()
+                    .deallocate(NonNull::new_unchecked(ptr), layout);
             }
         }
     }

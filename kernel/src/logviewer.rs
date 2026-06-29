@@ -21,30 +21,30 @@ use crate::serial;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const BG:           u32 = 0x050A07;
-const HEADER_BG:    u32 = 0x091408;
-const HEADER_COL:   u32 = 0x80C888;
-const BORDER_COL:   u32 = 0x183020;
-const LINE_COL:     u32 = 0xA0C8A8;
-const DIM_COL:      u32 = 0x2A5030;
-const NUM_COL:      u32 = 0x2A6038;
-const STATUS_BG:    u32 = 0x091408;
-const STATUS_COL:   u32 = 0x3A6040;
-const STATUS_VAL:   u32 = 0x60A870;
-const SCROLL_BG:    u32 = 0x0A1810;
-const SCROLL_FG:    u32 = 0x1E4828;
-const WARN_COL:     u32 = 0xE3B341;
-const ERR_COL:      u32 = 0xC05050;
+const BG: u32 = 0x050A07;
+const HEADER_BG: u32 = 0x091408;
+const HEADER_COL: u32 = 0x80C888;
+const BORDER_COL: u32 = 0x183020;
+const LINE_COL: u32 = 0xA0C8A8;
+const DIM_COL: u32 = 0x2A5030;
+const NUM_COL: u32 = 0x2A6038;
+const STATUS_BG: u32 = 0x091408;
+const STATUS_COL: u32 = 0x3A6040;
+const STATUS_VAL: u32 = 0x60A870;
+const SCROLL_BG: u32 = 0x0A1810;
+const SCROLL_FG: u32 = 0x1E4828;
+const WARN_COL: u32 = 0xE3B341;
+const ERR_COL: u32 = 0xC05050;
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-const HEADER_H:  usize = 22;
-const STATUS_H:  usize = 16;
-const LNUM_W:    usize = 36;
-const PAD_X:     usize = 6;
-const ROW_H:     usize = 12;
-const CHAR_W:    usize = 6;
-const SCROLL_W:  usize = 6;
+const HEADER_H: usize = 22;
+const STATUS_H: usize = 16;
+const LNUM_W: usize = 36;
+const PAD_X: usize = 6;
+const ROW_H: usize = 12;
+const CHAR_W: usize = 6;
+const SCROLL_W: usize = 6;
 
 // ── Buffer ────────────────────────────────────────────────────────────────────
 
@@ -59,12 +59,12 @@ const VIEW_BUF: usize = MAX_LINES * 80;
 
 pub struct LogViewerApp {
     /// Flat byte store; lines are delimited by `\n`.
-    text:       [u8; VIEW_BUF],
-    text_len:   usize,
+    text: [u8; VIEW_BUF],
+    text_len: usize,
     /// Byte offset of each line start in `text`.
-    lines:      [usize; MAX_LINES],
+    lines: [usize; MAX_LINES],
     line_count: usize,
-    scroll:     usize,
+    scroll: usize,
     /// Ring buffer byte count captured at last refresh (detect new data).
     last_total: usize,
 }
@@ -72,11 +72,11 @@ pub struct LogViewerApp {
 impl LogViewerApp {
     pub fn new() -> Self {
         let mut app = LogViewerApp {
-            text:       [0u8; VIEW_BUF],
-            text_len:   0,
-            lines:      [0usize; MAX_LINES],
+            text: [0u8; VIEW_BUF],
+            text_len: 0,
+            lines: [0usize; MAX_LINES],
             line_count: 0,
-            scroll:     0,
+            scroll: 0,
             last_total: 0,
         };
         app.refresh();
@@ -91,7 +91,11 @@ impl LogViewerApp {
 
         // Index lines.
         self.line_count = 0;
-        if n == 0 { self.lines[0] = 0; self.line_count = 1; return; }
+        if n == 0 {
+            self.lines[0] = 0;
+            self.line_count = 1;
+            return;
+        }
         self.lines[0] = 0;
         self.line_count = 1;
         for i in 0..n {
@@ -114,9 +118,15 @@ impl LogViewerApp {
 
     fn line_col(line_bytes: &[u8]) -> u32 {
         // Colour-code lines by prefix keywords.
-        if line_bytes.starts_with(b"error") || line_bytes.starts_with(b"PANIC") 
-            || line_bytes.starts_with(b"fault") { return ERR_COL; }
-        if line_bytes.starts_with(b"warn") || line_bytes.starts_with(b"WARN") { return WARN_COL; }
+        if line_bytes.starts_with(b"error")
+            || line_bytes.starts_with(b"PANIC")
+            || line_bytes.starts_with(b"fault")
+        {
+            return ERR_COL;
+        }
+        if line_bytes.starts_with(b"warn") || line_bytes.starts_with(b"WARN") {
+            return WARN_COL;
+        }
         LINE_COL
     }
 }
@@ -124,11 +134,21 @@ impl LogViewerApp {
 // ── App trait ─────────────────────────────────────────────────────────────────
 
 impl App for LogViewerApp {
-    fn title(&self) -> &str { "Log Viewer" }
-    fn app_id(&self) -> &'static str { "logviewer" }
-    fn preferred_size(&self) -> (usize, usize) { (760, 500) }
-    fn allow_multiple_instances(&self) -> bool { false }
-    fn refresh_interval_ms(&self) -> Option<u64> { Some(500) }  // auto-refresh every 0.5s
+    fn title(&self) -> &str {
+        "Log Viewer"
+    }
+    fn app_id(&self) -> &'static str {
+        "logviewer"
+    }
+    fn preferred_size(&self) -> (usize, usize) {
+        (760, 500)
+    }
+    fn allow_multiple_instances(&self) -> bool {
+        false
+    }
+    fn refresh_interval_ms(&self) -> Option<u64> {
+        Some(500)
+    } // auto-refresh every 0.5s
 
     fn render(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
         let visible = Self::visible_rows(ch);
@@ -136,7 +156,12 @@ impl App for LogViewerApp {
         // Header
         framebuffer::fill_rect(cx, cy, cw, HEADER_H, HEADER_BG);
         framebuffer::fill_rect(cx, cy + HEADER_H - 1, cw, 1, BORDER_COL);
-        framebuffer::draw_text_at(cx + PAD_X, cy + (HEADER_H - 8) / 2, "Kernel Log", HEADER_COL);
+        framebuffer::draw_text_at(
+            cx + PAD_X,
+            cy + (HEADER_H - 8) / 2,
+            "Kernel Log",
+            HEADER_COL,
+        );
         let hint = "R=refresh  g/G=top/bot  arrows=scroll";
         let hx = cx + cw.saturating_sub(hint.len() * 6 + 8);
         framebuffer::draw_text_at(hx, cy + (HEADER_H - 8) / 2, hint, DIM_COL);
@@ -155,7 +180,8 @@ impl App for LogViewerApp {
         framebuffer::fill_rect(sb_x, text_y, SCROLL_W, text_h, SCROLL_BG);
         if self.line_count > visible && visible > 0 {
             let thumb_h = (text_h * visible / self.line_count).max(4);
-            let thumb_y = text_y + (text_h - thumb_h) * self.scroll / (self.line_count - visible).max(1);
+            let thumb_y =
+                text_y + (text_h - thumb_h) * self.scroll / (self.line_count - visible).max(1);
             framebuffer::fill_rect(sb_x, thumb_y, SCROLL_W, thumb_h, SCROLL_FG);
         }
 
@@ -164,7 +190,9 @@ impl App for LogViewerApp {
 
         for row in 0..visible {
             let line_idx = self.scroll + row;
-            if line_idx >= self.line_count { break; }
+            if line_idx >= self.line_count {
+                break;
+            }
 
             let ry = text_y + row * ROW_H;
 
@@ -183,7 +211,11 @@ impl App for LogViewerApp {
             };
             let raw = &self.text[start..end];
             // Strip \r if present
-            let raw = if raw.last() == Some(&b'\r') { &raw[..raw.len()-1] } else { raw };
+            let raw = if raw.last() == Some(&b'\r') {
+                &raw[..raw.len() - 1]
+            } else {
+                raw
+            };
             let display_len = raw.len().min(max_chars);
             let col = Self::line_col(raw);
             if let Ok(s) = core::str::from_utf8(&raw[..display_len]) {
@@ -215,16 +247,18 @@ impl App for LogViewerApp {
 
         match key {
             Key::ArrowUp => {
-                if self.scroll > 0 { self.scroll -= 1; }
+                if self.scroll > 0 {
+                    self.scroll -= 1;
+                }
             }
             Key::ArrowDown => {
-                if self.scroll + 1 < self.line_count { self.scroll += 1; }
+                if self.scroll + 1 < self.line_count {
+                    self.scroll += 1;
+                }
             }
             Key::Tab => {
                 // Page down
-                self.scroll = (self.scroll + visible).min(
-                    self.line_count.saturating_sub(1)
-                );
+                self.scroll = (self.scroll + visible).min(self.line_count.saturating_sub(1));
             }
             Key::Backspace => {
                 // Page up
@@ -233,47 +267,80 @@ impl App for LogViewerApp {
             Key::Char(b'g') => {
                 self.scroll = 0;
             }
-            Key::Char(b'G') | Key::Char(b'\x05') => { // G or Ctrl+E
+            Key::Char(b'G') | Key::Char(b'\x05') => {
+                // G or Ctrl+E
                 self.scroll_to_bottom(visible);
             }
-            Key::Char(b'r') | Key::Char(b'R') | Key::Char(b'\x0F') => { // r/R/Ctrl+O
+            Key::Char(b'r') | Key::Char(b'R') | Key::Char(b'\x0F') => {
+                // r/R/Ctrl+O
                 let was_at_bottom = self.scroll + visible >= self.line_count;
                 self.refresh();
-                if was_at_bottom { self.scroll_to_bottom(visible); }
+                if was_at_bottom {
+                    self.scroll_to_bottom(visible);
+                }
             }
             _ => return AppAction::Nothing,
         }
 
-        if self.scroll != prev_scroll { AppAction::RedrawAll } else { AppAction::Nothing }
+        if self.scroll != prev_scroll {
+            AppAction::RedrawAll
+        } else {
+            AppAction::Nothing
+        }
     }
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
 fn fmt_usize(buf: &mut [u8; 8], mut n: usize) -> usize {
-    if n == 0 { buf[0] = b'0'; return 1; }
+    if n == 0 {
+        buf[0] = b'0';
+        return 1;
+    }
     let mut tmp = [0u8; 8];
     let mut ti = 0usize;
-    while n > 0 { tmp[ti] = b'0' + (n % 10) as u8; ti += 1; n /= 10; }
-    for i in 0..ti { buf[i] = tmp[ti - 1 - i]; }
+    while n > 0 {
+        tmp[ti] = b'0' + (n % 10) as u8;
+        ti += 1;
+        n /= 10;
+    }
+    for i in 0..ti {
+        buf[i] = tmp[ti - 1 - i];
+    }
     ti
 }
 
 fn write_label(buf: &mut [u8; 80], pos: &mut usize, label: &[u8]) {
-    for &b in label { if *pos < buf.len() { buf[*pos] = b; *pos += 1; } }
+    for &b in label {
+        if *pos < buf.len() {
+            buf[*pos] = b;
+            *pos += 1;
+        }
+    }
 }
 
 fn write_usize_s(buf: &mut [u8; 80], pos: &mut usize, mut n: usize) {
     if n == 0 {
-        if *pos < buf.len() { buf[*pos] = b'0'; *pos += 1; }
+        if *pos < buf.len() {
+            buf[*pos] = b'0';
+            *pos += 1;
+        }
         return;
     }
     let start = *pos;
     let mut tmp = [0u8; 20];
     let mut ti = 0usize;
-    while n > 0 { tmp[ti] = b'0' + (n % 10) as u8; ti += 1; n /= 10; }
+    while n > 0 {
+        tmp[ti] = b'0' + (n % 10) as u8;
+        ti += 1;
+        n /= 10;
+    }
     let end = start + ti;
-    if end > buf.len() { return; }
-    for i in 0..ti { buf[start + i] = tmp[ti - 1 - i]; }
+    if end > buf.len() {
+        return;
+    }
+    for i in 0..ti {
+        buf[start + i] = tmp[ti - 1 - i];
+    }
     *pos = end;
 }

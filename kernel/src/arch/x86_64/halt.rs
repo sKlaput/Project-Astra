@@ -27,6 +27,8 @@ pub fn power_off() -> ! {
         core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
     }
     loop {
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+        }
     }
 }

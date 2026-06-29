@@ -13,8 +13,8 @@
 const MAX_LOAD_SEGS: usize = 4;
 
 const PT_LOAD: u32 = 1;
-const PF_W:    u32 = 2;
-const PF_X:    u32 = 1;
+const PF_W: u32 = 2;
+const PF_X: u32 = 1;
 const ET_EXEC: u16 = 2;
 const EM_X86_64: u16 = 62;
 
@@ -243,7 +243,7 @@ pub static GUI_DEMO_ELF: &[u8] = &[
 
 // ---------------------------------------------------------------------------
 // Embedded window manager demo
-// 
+//
 // Demonstrates E9 window manager concept using graphics syscalls:
 // - SYS_DRAW_RECT (25): draw filled window background and title bar
 // - Multiple syscalls to build a complete window UI mock
@@ -551,12 +551,7 @@ pub fn load_elf(bytes: &[u8]) -> Result<u64, LoadError> {
 pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadError> {
     use crate::memory::frame_allocator::allocate_frame;
     use crate::memory::paging::{
-        hhdm_offset,
-        is_user_range,
-        is_user_virt,
-        map_page_in_pml4,
-        PageTableFlags,
-        PAGE_SIZE,
+        hhdm_offset, is_user_range, is_user_virt, map_page_in_pml4, PageTableFlags, PAGE_SIZE,
     };
 
     #[derive(Clone, Copy)]
@@ -586,16 +581,20 @@ pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadErr
         return Err(LoadError::UnsupportedEndian); // not little-endian
     }
 
-    let e_type    = u16::from_le_bytes([bytes[16], bytes[17]]);
+    let e_type = u16::from_le_bytes([bytes[16], bytes[17]]);
     let e_machine = u16::from_le_bytes([bytes[18], bytes[19]]);
-    if e_type    != ET_EXEC    { return Err(LoadError::UnsupportedType);    }
-    if e_machine != EM_X86_64 { return Err(LoadError::UnsupportedMachine); }
+    if e_type != ET_EXEC {
+        return Err(LoadError::UnsupportedType);
+    }
+    if e_machine != EM_X86_64 {
+        return Err(LoadError::UnsupportedMachine);
+    }
 
     // SAFETY: length >= 64 checked above; all index ranges are within header.
-    let e_entry     = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-    let e_phoff     = u64::from_le_bytes(bytes[32..40].try_into().unwrap()) as usize;
+    let e_entry = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+    let e_phoff = u64::from_le_bytes(bytes[32..40].try_into().unwrap()) as usize;
     let e_phentsize = u16::from_le_bytes([bytes[54], bytes[55]]) as usize;
-    let e_phnum     = u16::from_le_bytes([bytes[56], bytes[57]]) as usize;
+    let e_phnum = u16::from_le_bytes([bytes[56], bytes[57]]) as usize;
 
     if e_phentsize < 56 {
         return Err(LoadError::InvalidProgramHeader);
@@ -628,12 +627,12 @@ pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadErr
             continue;
         }
 
-        let p_flags  = u32::from_le_bytes([ph[4],  ph[5],  ph[6],  ph[7]]);
+        let p_flags = u32::from_le_bytes([ph[4], ph[5], ph[6], ph[7]]);
         let p_offset = u64::from_le_bytes(ph[8..16].try_into().unwrap()) as usize;
-        let p_vaddr  = u64::from_le_bytes(ph[16..24].try_into().unwrap()) as usize;
+        let p_vaddr = u64::from_le_bytes(ph[16..24].try_into().unwrap()) as usize;
         let p_filesz = u64::from_le_bytes(ph[32..40].try_into().unwrap()) as usize;
-        let p_memsz  = u64::from_le_bytes(ph[40..48].try_into().unwrap()) as usize;
-        let p_align  = u64::from_le_bytes(ph[48..56].try_into().unwrap()) as usize;
+        let p_memsz = u64::from_le_bytes(ph[40..48].try_into().unwrap()) as usize;
+        let p_align = u64::from_le_bytes(ph[48..56].try_into().unwrap()) as usize;
 
         if p_memsz < p_filesz {
             return Err(LoadError::UnsupportedSegmentLayout);
@@ -675,8 +674,8 @@ pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadErr
             .checked_add(PAGE_SIZE - 1)
             .ok_or(LoadError::UnsupportedSegmentLayout)?
             / PAGE_SIZE;
-        let writable    = (p_flags & PF_W) != 0;
-        let executable  = (p_flags & PF_X) != 0;
+        let writable = (p_flags & PF_W) != 0;
+        let executable = (p_flags & PF_X) != 0;
 
         // Enforce W^X: reject any PT_LOAD that is both writable and executable.
         if writable && executable {
@@ -714,9 +713,7 @@ pub fn load_elf_into_pml4(bytes: &[u8], pml4_phys: usize) -> Result<u64, LoadErr
             // Copy file data into the frame via the HHDM.
             // SAFETY: frame was just allocated; HHDM+phys gives a valid writable pointer.
             let frame_hhdm = frame.start_address() + hhdm_offset();
-            let dest = unsafe {
-                core::slice::from_raw_parts_mut(frame_hhdm as *mut u8, PAGE_SIZE)
-            };
+            let dest = unsafe { core::slice::from_raw_parts_mut(frame_hhdm as *mut u8, PAGE_SIZE) };
 
             // Zero-fill first (handles the BSS region: memsz > filesz).
             dest.fill(0);

@@ -136,24 +136,32 @@ unsafe fn inb(port: u16) -> u8 {
 const LOG_CAP: usize = 16 * 1024;
 
 struct LogRing {
-    buf:   [u8; LOG_CAP],
-    write: usize,  // next write position (monotonic, mod LOG_CAP)
-    count: usize,  // bytes stored (capped at LOG_CAP)
+    buf: [u8; LOG_CAP],
+    write: usize, // next write position (monotonic, mod LOG_CAP)
+    count: usize, // bytes stored (capped at LOG_CAP)
 }
 
 impl LogRing {
     const fn new() -> Self {
-        LogRing { buf: [0u8; LOG_CAP], write: 0, count: 0 }
+        LogRing {
+            buf: [0u8; LOG_CAP],
+            write: 0,
+            count: 0,
+        }
     }
 
     fn push(&mut self, b: u8) {
         self.buf[self.write % LOG_CAP] = b;
         self.write += 1;
-        if self.count < LOG_CAP { self.count += 1; }
+        if self.count < LOG_CAP {
+            self.count += 1;
+        }
     }
 
     fn push_str(&mut self, s: &str) {
-        for b in s.bytes() { self.push(b); }
+        for b in s.bytes() {
+            self.push(b);
+        }
     }
 }
 
@@ -176,7 +184,9 @@ pub fn log_line(s: &str) {
 /// `total_bytes()` gives the total captured byte count (for pagination).
 pub fn log_read(offset: usize, buf: &mut [u8]) -> usize {
     let r = LOG_RING.lock();
-    if r.count == 0 || offset >= r.count { return 0; }
+    if r.count == 0 || offset >= r.count {
+        return 0;
+    }
     let available = r.count - offset;
     let n = available.min(buf.len());
     // oldest byte is at write - count (all mod LOG_CAP)

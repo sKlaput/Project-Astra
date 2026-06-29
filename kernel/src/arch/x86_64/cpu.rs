@@ -44,9 +44,13 @@ pub fn smap_enabled() -> bool {
 #[inline(always)]
 pub fn with_user_access<R, F: FnOnce() -> R>(f: F) -> R {
     if SMAP_ENABLED.load(Ordering::Relaxed) {
-        unsafe { core::arch::asm!("stac", options(nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("stac", options(nostack, preserves_flags));
+        }
         let r = f();
-        unsafe { core::arch::asm!("clac", options(nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("clac", options(nostack, preserves_flags));
+        }
         r
     } else {
         f()
@@ -137,9 +141,15 @@ fn enable_kernel_protections() {
         );
 
         let mut cr4_or: u64 = 0;
-        if smep { cr4_or |= CR4_SMEP; }
-        if umip { cr4_or |= CR4_UMIP; }
-        if smap { cr4_or |= CR4_SMAP; }
+        if smep {
+            cr4_or |= CR4_SMEP;
+        }
+        if umip {
+            cr4_or |= CR4_UMIP;
+        }
+        if smap {
+            cr4_or |= CR4_SMAP;
+        }
         if cr4_or != 0 {
             core::arch::asm!(
                 "mov rax, cr4",
@@ -154,7 +164,9 @@ fn enable_kernel_protections() {
 
     if smap {
         // After enabling SMAP, EFLAGS.AC starts at 0; ensure CLAC just in case.
-        unsafe { core::arch::asm!("clac", options(nostack, preserves_flags)); }
+        unsafe {
+            core::arch::asm!("clac", options(nostack, preserves_flags));
+        }
         SMAP_ENABLED.store(true, Ordering::Relaxed);
     }
 }

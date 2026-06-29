@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Kernel synchronization primitives built on cooperative scheduling.
 // ---------------------------------------------------------------------------
-use core::sync::atomic::{AtomicU64, Ordering};
 use crate::scheduler::{self, TaskId};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 // Maximum number of tasks that can queue on a single mutex at once.
 const WAIT_CAP: usize = 8;
@@ -24,7 +24,11 @@ impl KSpinlock {
 
     /// Busy-wait until the lock is acquired.
     pub fn lock(&self) {
-        while self.locked.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        while self
+            .locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             while self.locked.load(Ordering::Relaxed) != 0 {
                 core::hint::spin_loop();
             }
@@ -33,7 +37,9 @@ impl KSpinlock {
 
     /// Try to acquire the lock without waiting.  Returns `true` if acquired.
     pub fn try_lock(&self) -> bool {
-        self.locked.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_ok()
+        self.locked
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 
     /// Release the lock.
@@ -73,8 +79,14 @@ impl KMutex {
             wait_head: AtomicU64::new(0),
             wait_tail: AtomicU64::new(0),
             wait_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
         }
     }
@@ -87,15 +99,20 @@ impl KMutex {
                 // Called outside task context – spin until acquired (should not
                 // happen in normal usage, but fail safe rather than hang).
                 None => {
-                    if self.try_lock_raw(0) { return; }
-                    for _ in 0..100 { core::hint::spin_loop(); }
+                    if self.try_lock_raw(0) {
+                        return;
+                    }
+                    for _ in 0..100 {
+                        core::hint::spin_loop();
+                    }
                     continue;
                 }
             };
 
             // Try to acquire atomically.
             if self.try_lock_raw(id.0) {
-                self.owner_base_prio.store(scheduler::task_priority(id) as u64, Ordering::Relaxed);
+                self.owner_base_prio
+                    .store(scheduler::task_priority(id) as u64, Ordering::Relaxed);
                 return;
             }
 
@@ -146,7 +163,8 @@ impl KMutex {
             None => return self.try_lock_raw(0),
         };
         if self.try_lock_raw(id.0) {
-            self.owner_base_prio.store(scheduler::task_priority(id) as u64, Ordering::Relaxed);
+            self.owner_base_prio
+                .store(scheduler::task_priority(id) as u64, Ordering::Relaxed);
             true
         } else {
             false
@@ -172,7 +190,9 @@ impl KMutex {
                 let wake_at = (now + 1).min(deadline_tick);
                 scheduler::sleep_current_until_tick(wake_at);
             } else {
-                for _ in 0..100 { core::hint::spin_loop(); }
+                for _ in 0..100 {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -185,10 +205,9 @@ impl KMutex {
     // --- internals ---
 
     fn try_lock_raw(&self, expected_owner: u64) -> bool {
-        self.owner.compare_exchange(
-            0, expected_owner,
-            Ordering::Acquire, Ordering::Relaxed,
-        ).is_ok()
+        self.owner
+            .compare_exchange(0, expected_owner, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 
     fn enqueue_waiter_once(&self, id: TaskId) {
@@ -267,8 +286,14 @@ impl KSemaphore {
             wait_head: AtomicU64::new(0),
             wait_tail: AtomicU64::new(0),
             wait_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
         }
     }
@@ -279,10 +304,11 @@ impl KSemaphore {
             // Try to decrement without going negative (CAS loop).
             let cur = self.count.load(Ordering::Acquire);
             if cur > 0 {
-                if self.count.compare_exchange(
-                    cur, cur - 1,
-                    Ordering::Acquire, Ordering::Relaxed,
-                ).is_ok() {
+                if self
+                    .count
+                    .compare_exchange(cur, cur - 1, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok()
+                {
                     return;
                 }
                 // CAS lost the race — retry without parking.
@@ -294,7 +320,9 @@ impl KSemaphore {
                 Some(id) => id,
                 None => {
                     // Called outside task context — spin.
-                    for _ in 0..100 { core::hint::spin_loop(); }
+                    for _ in 0..100 {
+                        core::hint::spin_loop();
+                    }
                     continue;
                 }
             };
@@ -329,10 +357,11 @@ impl KSemaphore {
             if cur == 0 {
                 return false;
             }
-            if self.count.compare_exchange(
-                cur, cur - 1,
-                Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .count
+                .compare_exchange(cur, cur - 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return true;
             }
         }
@@ -357,7 +386,9 @@ impl KSemaphore {
                 let wake_at = (now + 1).min(deadline_tick);
                 scheduler::sleep_current_until_tick(wake_at);
             } else {
-                for _ in 0..100 { core::hint::spin_loop(); }
+                for _ in 0..100 {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -455,14 +486,26 @@ impl KChannel {
             tx_head: AtomicU64::new(0),
             tx_tail: AtomicU64::new(0),
             tx_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
             rx_head: AtomicU64::new(0),
             rx_tail: AtomicU64::new(0),
             rx_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
         }
     }
@@ -492,7 +535,9 @@ impl KChannel {
             let id = match scheduler::current_task() {
                 Some(id) => id,
                 None => {
-                    for _ in 0..100 { core::hint::spin_loop(); }
+                    for _ in 0..100 {
+                        core::hint::spin_loop();
+                    }
                     continue;
                 }
             };
@@ -520,7 +565,9 @@ impl KChannel {
                 let wake_at = (now + 1).min(deadline_tick);
                 scheduler::sleep_current_until_tick(wake_at);
             } else {
-                for _ in 0..100 { core::hint::spin_loop(); }
+                for _ in 0..100 {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -550,7 +597,9 @@ impl KChannel {
             let id = match scheduler::current_task() {
                 Some(id) => id,
                 None => {
-                    for _ in 0..100 { core::hint::spin_loop(); }
+                    for _ in 0..100 {
+                        core::hint::spin_loop();
+                    }
                     continue;
                 }
             };
@@ -578,7 +627,9 @@ impl KChannel {
                 let wake_at = (now + 1).min(deadline_tick);
                 scheduler::sleep_current_until_tick(wake_at);
             } else {
-                for _ in 0..100 { core::hint::spin_loop(); }
+                for _ in 0..100 {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -718,8 +769,14 @@ impl KCondVar {
             wait_head: AtomicU64::new(0),
             wait_tail: AtomicU64::new(0),
             wait_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
         }
     }
@@ -872,15 +929,29 @@ impl KRwLock {
         KRwLock {
             state: AtomicU64::new(0),
             write_want: AtomicU64::new(0),
-            wq_head: AtomicU64::new(0), wq_tail: AtomicU64::new(0),
+            wq_head: AtomicU64::new(0),
+            wq_tail: AtomicU64::new(0),
             wq_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
-            rq_head: AtomicU64::new(0), rq_tail: AtomicU64::new(0),
+            rq_head: AtomicU64::new(0),
+            rq_tail: AtomicU64::new(0),
             rq_buf: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
         }
     }
@@ -889,10 +960,9 @@ impl KRwLock {
     pub fn try_read_lock(&self) -> bool {
         let cur = self.state.load(Ordering::Acquire);
         if cur != WRITE_LOCKED && self.write_want.load(Ordering::Relaxed) == 0 {
-            self.state.compare_exchange(
-                cur, cur + 1,
-                Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok()
+            self.state
+                .compare_exchange(cur, cur + 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
         } else {
             false
         }
@@ -915,7 +985,9 @@ impl KRwLock {
                 let wake_at = (now + 1).min(deadline_tick);
                 scheduler::sleep_current_until_tick(wake_at);
             } else {
-                for _ in 0..100 { core::hint::spin_loop(); }
+                for _ in 0..100 {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -927,10 +999,9 @@ impl KRwLock {
 
     /// Try to acquire an exclusive (write) lock without blocking.
     pub fn try_write_lock(&self) -> bool {
-        self.state.compare_exchange(
-            0, WRITE_LOCKED,
-            Ordering::Acquire, Ordering::Relaxed,
-        ).is_ok()
+        self.state
+            .compare_exchange(0, WRITE_LOCKED, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 
     /// Acquire an exclusive (write) lock until `deadline_tick`.
@@ -950,7 +1021,9 @@ impl KRwLock {
                 let wake_at = (now + 1).min(deadline_tick);
                 scheduler::sleep_current_until_tick(wake_at);
             } else {
-                for _ in 0..100 { core::hint::spin_loop(); }
+                for _ in 0..100 {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -966,17 +1039,23 @@ impl KRwLock {
         loop {
             let cur = self.state.load(Ordering::Acquire);
             if cur != WRITE_LOCKED && self.write_want.load(Ordering::Relaxed) == 0 {
-                if self.state.compare_exchange(
-                    cur, cur + 1,
-                    Ordering::Acquire, Ordering::Relaxed,
-                ).is_ok() {
+                if self
+                    .state
+                    .compare_exchange(cur, cur + 1, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok()
+                {
                     return;
                 }
                 continue;
             }
             let id = match scheduler::current_task() {
                 Some(id) => id,
-                None => { for _ in 0..100 { core::hint::spin_loop(); } continue; }
+                None => {
+                    for _ in 0..100 {
+                        core::hint::spin_loop();
+                    }
+                    continue;
+                }
             };
             self.enqueue_reader(id);
             scheduler::park_current_task();
@@ -1001,15 +1080,21 @@ impl KRwLock {
     /// Acquire the exclusive (write) lock.  Blocks if any reader or writer holds it.
     pub fn write_lock(&self) {
         loop {
-            if self.state.compare_exchange(
-                0, WRITE_LOCKED,
-                Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .state
+                .compare_exchange(0, WRITE_LOCKED, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return;
             }
             let id = match scheduler::current_task() {
                 Some(id) => id,
-                None => { for _ in 0..100 { core::hint::spin_loop(); } continue; }
+                None => {
+                    for _ in 0..100 {
+                        core::hint::spin_loop();
+                    }
+                    continue;
+                }
             };
             // Increment write_want before enqueuing so concurrent read_lock() calls
             // see it and queue rather than acquire.  Single-core cooperative: no task
@@ -1035,7 +1120,10 @@ impl KRwLock {
             let mut n = 0usize;
             while n < WAIT_CAP {
                 match self.dequeue_reader() {
-                    Some(r) => { buf[n] = r; n += 1; }
+                    Some(r) => {
+                        buf[n] = r;
+                        n += 1;
+                    }
                     None => break,
                 }
             }
@@ -1053,7 +1141,9 @@ impl KRwLock {
     fn dequeue_writer(&self) -> Option<TaskId> {
         let h = self.wq_head.load(Ordering::Relaxed);
         let t = self.wq_tail.load(Ordering::Acquire);
-        if h == t { return None; }
+        if h == t {
+            return None;
+        }
         let id = self.wq_buf[(h as usize) % WAIT_CAP].load(Ordering::Relaxed);
         self.wq_head.fetch_add(1, Ordering::Relaxed);
         Some(TaskId(id))
@@ -1065,7 +1155,9 @@ impl KRwLock {
     fn dequeue_reader(&self) -> Option<TaskId> {
         let h = self.rq_head.load(Ordering::Relaxed);
         let t = self.rq_tail.load(Ordering::Acquire);
-        if h == t { return None; }
+        if h == t {
+            return None;
+        }
         let id = self.rq_buf[(h as usize) % WAIT_CAP].load(Ordering::Relaxed);
         self.rq_head.fetch_add(1, Ordering::Relaxed);
         Some(TaskId(id))

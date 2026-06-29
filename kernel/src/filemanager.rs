@@ -13,69 +13,69 @@
 // ---------------------------------------------------------------------------
 
 use crate::app::{App, AppAction};
+use crate::arch::x86_64::interrupts::uptime_ms;
 use crate::framebuffer;
 use crate::fs;
 use crate::input::Key;
-use crate::arch::x86_64::interrupts::uptime_ms;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const BG:          u32 = 0x080C12;
-const HEADER_BG:   u32 = 0x0C1420;
-const HEADER_COL:  u32 = 0xE8F4FD;
-const COLHDR_BG:   u32 = 0x0A1018;
-const COLHDR_COL:  u32 = 0x4A6880;
-const SEL_BG:      u32 = 0x1C3F62;   // clearly selected
-const SEL_BORDER:  u32 = 0x3870B0;   // bright accent bar on left edge
-const SEL_COL:     u32 = 0xF0F8FF;
-const DIR_COL:     u32 = 0x5CB8FF;
-const FILE_COL:    u32 = 0xB8D0E4;
-const UP_COL:      u32 = 0xA0C8E8;   // parent-entry text — brighter than normal dir
-const SIZE_COL:    u32 = 0x4A6880;
-const SIZE_SEL:    u32 = 0x8AB0CC;
-const BORDER_COL:  u32 = 0x182840;
-const PATH_BG:     u32 = 0x0A1828;   // slightly distinct background for path row
-const PATH_COL:    u32 = 0x88BEDD;   // bright enough to read the path clearly
-const PATH_LBL:    u32 = 0x3A5870;   // dimmer "Location:" label
-const COUNT_COL:   u32 = 0x5A7C98;   // item count, readable
-const HINT_COL:    u32 = 0x38566A;
-const HINT_KEY:    u32 = 0x607890;
-const EMPTY_COL:   u32 = 0x2A4058;
-const ERR_COL:     u32 = 0xC04040;
-const EVEN_BG:     u32 = 0x0A0F16;
-const HOVER_BG:    u32 = 0x10202E;  // mouse-hover row (visibly brighter than even rows)
-const SCROLL_BG:   u32 = 0x0C141C;
-const SCROLL_FG:   u32 = 0x2A4060;
+const BG: u32 = 0x080C12;
+const HEADER_BG: u32 = 0x0C1420;
+const HEADER_COL: u32 = 0xE8F4FD;
+const COLHDR_BG: u32 = 0x0A1018;
+const COLHDR_COL: u32 = 0x4A6880;
+const SEL_BG: u32 = 0x1C3F62; // clearly selected
+const SEL_BORDER: u32 = 0x3870B0; // bright accent bar on left edge
+const SEL_COL: u32 = 0xF0F8FF;
+const DIR_COL: u32 = 0x5CB8FF;
+const FILE_COL: u32 = 0xB8D0E4;
+const UP_COL: u32 = 0xA0C8E8; // parent-entry text — brighter than normal dir
+const SIZE_COL: u32 = 0x4A6880;
+const SIZE_SEL: u32 = 0x8AB0CC;
+const BORDER_COL: u32 = 0x182840;
+const PATH_BG: u32 = 0x0A1828; // slightly distinct background for path row
+const PATH_COL: u32 = 0x88BEDD; // bright enough to read the path clearly
+const PATH_LBL: u32 = 0x3A5870; // dimmer "Location:" label
+const COUNT_COL: u32 = 0x5A7C98; // item count, readable
+const HINT_COL: u32 = 0x38566A;
+const HINT_KEY: u32 = 0x607890;
+const EMPTY_COL: u32 = 0x2A4058;
+const ERR_COL: u32 = 0xC04040;
+const EVEN_BG: u32 = 0x0A0F16;
+const HOVER_BG: u32 = 0x10202E; // mouse-hover row (visibly brighter than even rows)
+const SCROLL_BG: u32 = 0x0C141C;
+const SCROLL_FG: u32 = 0x2A4060;
 
 // Breadcrumb colours
-const CRUMB_COL:   u32 = 0x70B0D0;   // clickable segment
-const CRUMB_HOV:   u32 = 0xC0E4FC;   // hovered clickable segment
-const CRUMB_CUR:   u32 = 0x486880;   // current (last) segment — dimmer
-const CRUMB_SEP:   u32 = 0x2A4860;   // " > " separator
+const CRUMB_COL: u32 = 0x70B0D0; // clickable segment
+const CRUMB_HOV: u32 = 0xC0E4FC; // hovered clickable segment
+const CRUMB_CUR: u32 = 0x486880; // current (last) segment — dimmer
+const CRUMB_SEP: u32 = 0x2A4860; // " > " separator
 
-const MAX_CRUMBS:  usize = 8;
+const MAX_CRUMBS: usize = 8;
 
 // Context menu
-const CTX_BG:      u32 = 0x111E2E;
-const CTX_BORDER:  u32 = 0x2A4870;
-const CTX_SEL_BG:  u32 = 0x1E3F62;
-const CTX_COL:     u32 = 0xC8E0F4;
-const CTX_DIS:     u32 = 0x3A5870;   // disabled item
-const CTX_ITEM_H:  usize = 16;
-const CTX_PAD_X:   usize = 10;
-const CTX_MIN_W:   usize = 130;
+const CTX_BG: u32 = 0x111E2E;
+const CTX_BORDER: u32 = 0x2A4870;
+const CTX_SEL_BG: u32 = 0x1E3F62;
+const CTX_COL: u32 = 0xC8E0F4;
+const CTX_DIS: u32 = 0x3A5870; // disabled item
+const CTX_ITEM_H: usize = 16;
+const CTX_PAD_X: usize = 10;
+const CTX_MIN_W: usize = 130;
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-const PAD_X:      usize = 12;
-const ROW_H:      usize = 18;
-const HEADER_H:   usize = 26;
-const COL_HDR_H:  usize = 16;
-const HINT_H:     usize = 20;
-const CHAR_W:     usize = 6;
-const SCROLL_W:   usize = 6;
+const PAD_X: usize = 12;
+const ROW_H: usize = 18;
+const HEADER_H: usize = 26;
+const COL_HDR_H: usize = 16;
+const HINT_H: usize = 20;
+const CHAR_W: usize = 6;
+const SCROLL_W: usize = 6;
 const SIZE_COL_W: usize = 64;
-const PREFIX_W:   usize = 4 * CHAR_W;
+const PREFIX_W: usize = 4 * CHAR_W;
 
 const MAX_ENTRIES: usize = 32;
 const DBL_CLICK_MS: u64 = 450;
@@ -85,12 +85,15 @@ const DBL_CLICK_MS: u64 = 450;
 #[derive(Clone)]
 struct PathBuf {
     data: [u8; 128],
-    len:  usize,
+    len: usize,
 }
 
 impl PathBuf {
     fn root() -> Self {
-        let mut b = PathBuf { data: [0u8; 128], len: 1 };
+        let mut b = PathBuf {
+            data: [0u8; 128],
+            len: 1,
+        };
         b.data[0] = b'/';
         b
     }
@@ -101,17 +104,29 @@ impl PathBuf {
 
     fn push(&mut self, name: &str) {
         if self.len > 0 && self.data[self.len - 1] != b'/' {
-            if self.len < self.data.len() { self.data[self.len] = b'/'; self.len += 1; }
+            if self.len < self.data.len() {
+                self.data[self.len] = b'/';
+                self.len += 1;
+            }
         }
         for b in name.bytes() {
-            if self.len < self.data.len() { self.data[self.len] = b; self.len += 1; }
+            if self.len < self.data.len() {
+                self.data[self.len] = b;
+                self.len += 1;
+            }
         }
     }
 
     fn pop(&mut self) {
-        if self.len <= 1 { return; }
-        if self.data[self.len - 1] == b'/' { self.len -= 1; }
-        while self.len > 1 && self.data[self.len - 1] != b'/' { self.len -= 1; }
+        if self.len <= 1 {
+            return;
+        }
+        if self.data[self.len - 1] == b'/' {
+            self.len -= 1;
+        }
+        while self.len > 1 && self.data[self.len - 1] != b'/' {
+            self.len -= 1;
+        }
     }
 }
 
@@ -119,19 +134,24 @@ impl PathBuf {
 
 #[derive(Clone, Copy)]
 struct Entry {
-    name:    [u8; 32],
-    nlen:    usize,
-    is_dir:  bool,
-    is_dyn:  bool,   // created via dynamic layer — can be deleted/renamed
-    is_fat32: bool,  // backed by FAT32 disk
-    node_id: u16,    // VFS NodeId (used for dyn ops)
-    size:    usize,
+    name: [u8; 32],
+    nlen: usize,
+    is_dir: bool,
+    is_dyn: bool,   // created via dynamic layer — can be deleted/renamed
+    is_fat32: bool, // backed by FAT32 disk
+    node_id: u16,   // VFS NodeId (used for dyn ops)
+    size: usize,
 }
 
 impl Entry {
     const EMPTY: Self = Entry {
-        name: [0u8; 32], nlen: 0, is_dir: false,
-        is_dyn: false, is_fat32: false, node_id: 0, size: 0,
+        name: [0u8; 32],
+        nlen: 0,
+        is_dir: false,
+        is_dyn: false,
+        is_fat32: false,
+        node_id: 0,
+        size: 0,
     };
 
     fn name_str(&self) -> &str {
@@ -142,19 +162,28 @@ impl Entry {
 // ── File-operation prompt state ─────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum PromptKind { None, New, Mkdir, Rename, ConfirmDel }
+enum PromptKind {
+    None,
+    New,
+    Mkdir,
+    Rename,
+    ConfirmDel,
+}
 
 #[derive(Clone, Copy)]
 struct FmPrompt {
-    kind:   PromptKind,
-    buf:    [u8; 32],   // input buffer for name / display name for confirm
-    len:    usize,
-    target: u16,        // parent NodeId (New) or file NodeId (Rename/Delete)
+    kind: PromptKind,
+    buf: [u8; 32], // input buffer for name / display name for confirm
+    len: usize,
+    target: u16, // parent NodeId (New) or file NodeId (Rename/Delete)
 }
 
 impl FmPrompt {
     const DEFAULT: Self = FmPrompt {
-        kind: PromptKind::None, buf: [0u8; 32], len: 0, target: 0,
+        kind: PromptKind::None,
+        buf: [0u8; 32],
+        len: 0,
+        target: 0,
     };
 }
 
@@ -176,46 +205,59 @@ enum CtxAction {
 #[derive(Clone, Copy)]
 struct Clipboard {
     /// Display name of the source entry (up to 64 bytes).
-    name:     [u8; 64],
+    name: [u8; 64],
     name_len: usize,
     /// FAT32 directory cluster that contains the source.
     src_cluster: u32,
     /// True = move (cut), false = copy.
-    is_cut:   bool,
+    is_cut: bool,
 }
 
 impl Clipboard {
     const EMPTY: Self = Clipboard {
-        name: [0u8; 64], name_len: 0, src_cluster: 0, is_cut: false,
+        name: [0u8; 64],
+        name_len: 0,
+        src_cluster: 0,
+        is_cut: false,
     };
-    fn is_set(&self) -> bool { self.name_len > 0 }
+    fn is_set(&self) -> bool {
+        self.name_len > 0
+    }
 }
 
 #[derive(Clone, Copy)]
 struct CtxItem {
-    action:   CtxAction,
-    label:    &'static str,
-    enabled:  bool,
+    action: CtxAction,
+    label: &'static str,
+    enabled: bool,
 }
 
 #[derive(Clone, Copy)]
 struct CtxMenu {
-    visible:   bool,
-    x:         i32,   // position relative to window client area
-    y:         i32,
-    hover:     Option<usize>,
-    items:     [CtxItem; 5],
+    visible: bool,
+    x: i32, // position relative to window client area
+    y: i32,
+    hover: Option<usize>,
+    items: [CtxItem; 5],
     item_count: usize,
     // which row was right-clicked (usize::MAX = empty area)
     target_row: usize,
 }
 
 impl CtxMenu {
-    const NULL_ITEM: CtxItem = CtxItem { action: CtxAction::Open, label: "", enabled: false };
+    const NULL_ITEM: CtxItem = CtxItem {
+        action: CtxAction::Open,
+        label: "",
+        enabled: false,
+    };
     const fn hidden() -> Self {
         CtxMenu {
-            visible: false, x: 0, y: 0, hover: None,
-            items: [Self::NULL_ITEM; 5], item_count: 0,
+            visible: false,
+            x: 0,
+            y: 0,
+            hover: None,
+            items: [Self::NULL_ITEM; 5],
+            item_count: 0,
             target_row: usize::MAX,
         }
     }
@@ -223,7 +265,9 @@ impl CtxMenu {
         let mut max_chars = 0usize;
         for i in 0..self.item_count {
             let l = self.items[i].label.len();
-            if l > max_chars { max_chars = l; }
+            if l > max_chars {
+                max_chars = l;
+            }
         }
         (max_chars * CHAR_W + CTX_PAD_X * 2).max(CTX_MIN_W)
     }
@@ -244,49 +288,49 @@ enum FmView {
 
 // ── Drive tile layout for This PC view ────────────────────────────────────────
 
-const TILE_W:    usize = 160;
-const TILE_H:    usize = 80;
-const TILE_PAD:  usize = 20;   // horizontal gap between tiles
-const TILE_TOP:  usize = HEADER_H + 24; // top margin inside client area
-const TILE_BG:   u32   = 0x0C1828;
-const TILE_HOV:  u32   = 0x162840;
-const TILE_SEL:  u32   = 0x1C3F62;
-const TILE_BORD: u32   = 0x1A3050;
-const TILE_NAME: u32   = 0xD8EEFF;
-const TILE_SUB:  u32   = 0x4A7090;
-const TILE_BAR:  u32   = 0x1E5090;
-const TILE_USED: u32   = 0x2E78CC;
-const THIS_PC_BG: u32  = 0x060A10;
+const TILE_W: usize = 160;
+const TILE_H: usize = 80;
+const TILE_PAD: usize = 20; // horizontal gap between tiles
+const TILE_TOP: usize = HEADER_H + 24; // top margin inside client area
+const TILE_BG: u32 = 0x0C1828;
+const TILE_HOV: u32 = 0x162840;
+const TILE_SEL: u32 = 0x1C3F62;
+const TILE_BORD: u32 = 0x1A3050;
+const TILE_NAME: u32 = 0xD8EEFF;
+const TILE_SUB: u32 = 0x4A7090;
+const TILE_BAR: u32 = 0x1E5090;
+const TILE_USED: u32 = 0x2E78CC;
+const THIS_PC_BG: u32 = 0x060A10;
 
 // ── FileManagerApp ────────────────────────────────────────────────────────────
 
 pub struct FileManagerApp {
-    cwd:            PathBuf,
-    fat32_cluster:  u32,   // 0 = not in a FAT32 directory
+    cwd: PathBuf,
+    fat32_cluster: u32, // 0 = not in a FAT32 directory
     /// Stack of parent FAT32 clusters, one entry per level pushed.
     /// fat32_cluster_stack[0] = cluster when we first entered FAT32 root.
     fat32_cluster_stack: [u32; 8],
-    fat32_stack_depth:   usize,
+    fat32_stack_depth: usize,
     /// Display names for the FAT32 breadcrumb segments (parallel to stack).
-    fat32_crumb_names:   [[u8; 32]; 8],
-    fat32_crumb_nlens:   [usize; 8],
-    entries:        [Entry; MAX_ENTRIES],
-    count:          usize,
-    selected:       usize,
-    scroll:         usize,
-    hover_row:      Option<usize>,
-    load_err:       bool,
-    last_click_ms:  u64,
+    fat32_crumb_names: [[u8; 32]; 8],
+    fat32_crumb_nlens: [usize; 8],
+    entries: [Entry; MAX_ENTRIES],
+    count: usize,
+    selected: usize,
+    scroll: usize,
+    hover_row: Option<usize>,
+    load_err: bool,
+    last_click_ms: u64,
     last_click_row: usize,
-    prompt:         FmPrompt,
-    op_err:         Option<&'static str>,
-    op_ok:          Option<&'static str>,  // success feedback, cleared on next keypress
-    ctx:            CtxMenu,
-    hover_crumb:    Option<usize>,
-    clipboard:      Clipboard,
-    view:           FmView,
-    tile_hover:     Option<usize>,  // hovered drive tile in ThisPc view
-    tile_sel:       Option<usize>,  // selected drive tile
+    prompt: FmPrompt,
+    op_err: Option<&'static str>,
+    op_ok: Option<&'static str>, // success feedback, cleared on next keypress
+    ctx: CtxMenu,
+    hover_crumb: Option<usize>,
+    clipboard: Clipboard,
+    view: FmView,
+    tile_hover: Option<usize>, // hovered drive tile in ThisPc view
+    tile_sel: Option<usize>,   // selected drive tile
     tile_last_click_ms: u64,
 }
 
@@ -297,7 +341,12 @@ impl FileManagerApp {
         // Enter Files view first so the prompt is shown in context
         app.view = FmView::Files;
         let target = crate::fs::resolve_node_id(app.cwd.as_str()).unwrap_or(0);
-        app.prompt = FmPrompt { kind: PromptKind::New, buf: [0u8; 32], len: 0, target };
+        app.prompt = FmPrompt {
+            kind: PromptKind::New,
+            buf: [0u8; 32],
+            len: 0,
+            target,
+        };
         app
     }
 
@@ -307,29 +356,29 @@ impl FileManagerApp {
         // Build directly without calling new() to avoid the redundant load_dir()
         // that new() runs at the VFS root before we override the cluster.
         let mut app = FileManagerApp {
-            cwd:            PathBuf::root(),
-            fat32_cluster:  cluster,
+            cwd: PathBuf::root(),
+            fat32_cluster: cluster,
             fat32_cluster_stack: [0u32; 8],
-            fat32_stack_depth:   0,
-            fat32_crumb_names:   [[0u8; 32]; 8],
-            fat32_crumb_nlens:   [0usize; 8],
-            entries:        [Entry::EMPTY; MAX_ENTRIES],
-            count:          0,
-            selected:       0,
-            scroll:         0,
-            hover_row:      None,
-            load_err:       false,
-            last_click_ms:  0,
+            fat32_stack_depth: 0,
+            fat32_crumb_names: [[0u8; 32]; 8],
+            fat32_crumb_nlens: [0usize; 8],
+            entries: [Entry::EMPTY; MAX_ENTRIES],
+            count: 0,
+            selected: 0,
+            scroll: 0,
+            hover_row: None,
+            load_err: false,
+            last_click_ms: 0,
             last_click_row: usize::MAX,
-            prompt:         FmPrompt::DEFAULT,
-            op_err:         None,
-            op_ok:          None,
-            ctx:            CtxMenu::hidden(),
-            hover_crumb:    None,
-            clipboard:      Clipboard::EMPTY,
-            view:           FmView::Files,
-            tile_hover:     None,
-            tile_sel:       None,
+            prompt: FmPrompt::DEFAULT,
+            op_err: None,
+            op_ok: None,
+            ctx: CtxMenu::hidden(),
+            hover_crumb: None,
+            clipboard: Clipboard::EMPTY,
+            view: FmView::Files,
+            tile_hover: None,
+            tile_sel: None,
             tile_last_click_ms: 0,
         };
         if cluster != 0 {
@@ -351,35 +400,40 @@ impl FileManagerApp {
         let mut app = Self::new();
         app.view = FmView::Files;
         let target = crate::fs::resolve_node_id(app.cwd.as_str()).unwrap_or(0);
-        app.prompt = FmPrompt { kind: PromptKind::Mkdir, buf: [0u8; 32], len: 0, target };
+        app.prompt = FmPrompt {
+            kind: PromptKind::Mkdir,
+            buf: [0u8; 32],
+            len: 0,
+            target,
+        };
         app
     }
 
     pub fn new() -> Self {
         let mut app = FileManagerApp {
-            cwd:            PathBuf::root(),
-            fat32_cluster:  0,
+            cwd: PathBuf::root(),
+            fat32_cluster: 0,
             fat32_cluster_stack: [0u32; 8],
-            fat32_stack_depth:   0,
-            fat32_crumb_names:   [[0u8; 32]; 8],
-            fat32_crumb_nlens:   [0usize; 8],
-            entries:        [Entry::EMPTY; MAX_ENTRIES],
-            count:          0,
-            selected:       0,
-            scroll:         0,
-            hover_row:      None,
-            load_err:       false,
-            last_click_ms:  0,
+            fat32_stack_depth: 0,
+            fat32_crumb_names: [[0u8; 32]; 8],
+            fat32_crumb_nlens: [0usize; 8],
+            entries: [Entry::EMPTY; MAX_ENTRIES],
+            count: 0,
+            selected: 0,
+            scroll: 0,
+            hover_row: None,
+            load_err: false,
+            last_click_ms: 0,
             last_click_row: usize::MAX,
-            prompt:         FmPrompt::DEFAULT,
-            op_err:         None,
-            op_ok:          None,
-            ctx:            CtxMenu::hidden(),
-            hover_crumb:    None,
-            clipboard:      Clipboard::EMPTY,
-            view:           FmView::ThisPc,
-            tile_hover:     None,
-            tile_sel:       None,
+            prompt: FmPrompt::DEFAULT,
+            op_err: None,
+            op_ok: None,
+            ctx: CtxMenu::hidden(),
+            hover_crumb: None,
+            clipboard: Clipboard::EMPTY,
+            view: FmView::ThisPc,
+            tile_hover: None,
+            tile_sel: None,
             tile_last_click_ms: 0,
         };
         app.load_dir();
@@ -390,20 +444,28 @@ impl FileManagerApp {
     /// For copy: reads the source file and writes it to the destination cluster.
     /// For cut (move): same, then deletes the source entry.
     fn do_paste(&mut self) {
-        if !self.clipboard.is_set() { return; }
+        if !self.clipboard.is_set() {
+            return;
+        }
         if !crate::fat32::is_mounted() {
             self.op_err = Some("Paste: no FAT32 disk");
             return;
         }
-        let dst_cluster = if self.fat32_cluster != 0 { self.fat32_cluster }
-                          else { fs::fat32_root_cluster() };
+        let dst_cluster = if self.fat32_cluster != 0 {
+            self.fat32_cluster
+        } else {
+            fs::fat32_root_cluster()
+        };
         let src_cluster = self.clipboard.src_cluster;
         let name = &self.clipboard.name[..self.clipboard.name_len];
 
         // Find the source entry
         let de = match crate::fat32::find_in_dir(src_cluster, name) {
             Some(d) => d,
-            None => { self.op_err = Some("Paste: source not found"); return; }
+            None => {
+                self.op_err = Some("Paste: source not found");
+                return;
+            }
         };
 
         if de.is_dir {
@@ -434,9 +496,9 @@ impl FileManagerApp {
     }
 
     fn load_dir(&mut self) {
-        self.count    = 0;
+        self.count = 0;
         self.selected = 0;
-        self.scroll   = 0;
+        self.scroll = 0;
         self.hover_row = None;
         self.load_err = false;
 
@@ -446,14 +508,19 @@ impl FileManagerApp {
             // Add ".." entry to navigate back
             let mut back = Entry::EMPTY;
             back.name[..2].copy_from_slice(b"..");
-            back.nlen   = 2;
+            back.nlen = 2;
             back.is_dir = true;
             self.entries[self.count] = back;
             self.count += 1;
 
             let fat_cluster = self.fat32_cluster;
             let mut fat_out = [fs::DynEntry {
-                id: 0, parent: 0, name: [0u8; 32], nlen: 0, is_dir: false, size: 0,
+                id: 0,
+                parent: 0,
+                name: [0u8; 32],
+                nlen: 0,
+                is_dir: false,
+                size: 0,
             }; 32];
             // Only call into FAT32 for valid cluster numbers (>= 2).
             // fat32_cluster == 1 is the sentinel for "empty dir / no cluster".
@@ -463,17 +530,19 @@ impl FileManagerApp {
                 0
             };
             for i in 0..fat_count {
-                if self.count >= MAX_ENTRIES { break; }
+                if self.count >= MAX_ENTRIES {
+                    break;
+                }
                 let d = &fat_out[i];
                 let mut e = Entry::EMPTY;
                 let nlen = d.nlen.min(32);
                 e.name[..nlen].copy_from_slice(&d.name[..nlen]);
-                e.nlen     = nlen;
-                e.is_dir   = d.is_dir;
-                e.is_dyn   = false;
+                e.nlen = nlen;
+                e.is_dir = d.is_dir;
+                e.is_dyn = false;
                 e.is_fat32 = true;
-                e.node_id  = d.id;
-                e.size     = d.size;
+                e.node_id = d.id;
+                e.size = d.size;
                 self.entries[self.count] = e;
                 self.count += 1;
             }
@@ -482,26 +551,38 @@ impl FileManagerApp {
 
         let dir_id = match fs::resolve_node_id(self.cwd.as_str()) {
             Some(id) => id,
-            None => { self.load_err = true; return; }
+            None => {
+                self.load_err = true;
+                return;
+            }
         };
 
         // Static VFS nodes (skip hidden system entries like /etc)
         const HIDDEN: &[&str] = &["etc"];
         for node in fs::iter_nodes() {
-            if self.count >= MAX_ENTRIES { break; }
-            if node.parent != Some(dir_id) { continue; }
-            if HIDDEN.iter().any(|h| *h == node.name) { continue; }
+            if self.count >= MAX_ENTRIES {
+                break;
+            }
+            if node.parent != Some(dir_id) {
+                continue;
+            }
+            if HIDDEN.iter().any(|h| *h == node.name) {
+                continue;
+            }
 
             let nb = node.name.as_bytes();
             let nlen = nb.len().min(32);
             let mut e = Entry::EMPTY;
             e.name[..nlen].copy_from_slice(&nb[..nlen]);
-            e.nlen    = nlen;
-            e.is_dir  = node.kind == fs::NodeKind::Directory;
-            e.is_dyn  = false;
+            e.nlen = nlen;
+            e.is_dir = node.kind == fs::NodeKind::Directory;
+            e.is_dyn = false;
             e.node_id = node.id;
-            e.size    = if e.is_dir {
-                fs::iter_nodes().iter().filter(|n| n.parent == Some(node.id)).count()
+            e.size = if e.is_dir {
+                fs::iter_nodes()
+                    .iter()
+                    .filter(|n| n.parent == Some(node.id))
+                    .count()
             } else {
                 node.data.len()
             };
@@ -511,20 +592,27 @@ impl FileManagerApp {
 
         // Dynamic files and folders in this directory
         let mut dyn_out = [fs::DynEntry {
-            id: 0, parent: 0, name: [0u8; 32], nlen: 0, is_dir: false, size: 0,
+            id: 0,
+            parent: 0,
+            name: [0u8; 32],
+            nlen: 0,
+            is_dir: false,
+            size: 0,
         }; 16];
         let dyn_count = fs::dyn_list_dir(dir_id, &mut dyn_out);
         for i in 0..dyn_count {
-            if self.count >= MAX_ENTRIES { break; }
+            if self.count >= MAX_ENTRIES {
+                break;
+            }
             let d = &dyn_out[i];
             let mut e = Entry::EMPTY;
             let nlen = d.nlen.min(32);
             e.name[..nlen].copy_from_slice(&d.name[..nlen]);
-            e.nlen    = nlen;
-            e.is_dir  = d.is_dir;
-            e.is_dyn  = true;
+            e.nlen = nlen;
+            e.is_dir = d.is_dir;
+            e.is_dyn = true;
             e.node_id = d.id;
-            e.size    = d.size;
+            e.size = d.size;
             self.entries[self.count] = e;
             self.count += 1;
         }
@@ -534,21 +622,28 @@ impl FileManagerApp {
         let fat_cluster = fs::fat32_root_cluster();
         if fat_cluster != 0 {
             let mut fat_out = [fs::DynEntry {
-                id: 0, parent: 0, name: [0u8; 32], nlen: 0, is_dir: false, size: 0,
+                id: 0,
+                parent: 0,
+                name: [0u8; 32],
+                nlen: 0,
+                is_dir: false,
+                size: 0,
             }; 32];
             let fat_count = fs::fat32_list_dir(fat_cluster, &mut fat_out, 0);
             for i in 0..fat_count {
-                if self.count >= MAX_ENTRIES { break; }
+                if self.count >= MAX_ENTRIES {
+                    break;
+                }
                 let d = &fat_out[i];
                 let mut e = Entry::EMPTY;
                 let nlen = d.nlen.min(32);
                 e.name[..nlen].copy_from_slice(&d.name[..nlen]);
-                e.nlen     = nlen;
-                e.is_dir   = d.is_dir;
-                e.is_dyn   = false;
+                e.nlen = nlen;
+                e.is_dir = d.is_dir;
+                e.is_dyn = false;
                 e.is_fat32 = true;
-                e.node_id  = d.id;
-                e.size     = d.size;
+                e.node_id = d.id;
+                e.size = d.size;
                 self.entries[self.count] = e;
                 self.count += 1;
             }
@@ -556,9 +651,13 @@ impl FileManagerApp {
     }
 
     fn navigate_into(&mut self) {
-        if self.count == 0 { return; }
+        if self.count == 0 {
+            return;
+        }
         let e = self.entries[self.selected];
-        if !e.is_dir { return; }
+        if !e.is_dir {
+            return;
+        }
 
         // ".." entry — navigate up
         if e.nlen == 2 && e.name[0] == b'.' && e.name[1] == b'.' {
@@ -571,7 +670,9 @@ impl FileManagerApp {
             } else {
                 // Back to VFS root from first FAT32 level
                 self.fat32_cluster = 0;
-                if self.cwd.len > 1 { self.cwd.pop(); }
+                if self.cwd.len > 1 {
+                    self.cwd.pop();
+                }
             }
             self.load_dir();
             return;
@@ -598,9 +699,13 @@ impl FileManagerApp {
                 // After the push above, stack[depth-1] holds the parent's cluster
                 // (0 means the parent was the FAT32 root).
                 let parent = {
-                    let stacked = self.fat32_cluster_stack
-                        [self.fat32_stack_depth.saturating_sub(1)];
-                    if stacked != 0 { stacked } else { fs::fat32_root_cluster() }
+                    let stacked =
+                        self.fat32_cluster_stack[self.fat32_stack_depth.saturating_sub(1)];
+                    if stacked != 0 {
+                        stacked
+                    } else {
+                        fs::fat32_root_cluster()
+                    }
                 };
                 crate::fat32::find_in_dir(parent, &e.name[..e.nlen])
                     .map(|de| de.cluster)
@@ -620,7 +725,9 @@ impl FileManagerApp {
     }
 
     fn open_selected(&mut self) -> AppAction {
-        if self.count == 0 { return AppAction::Nothing; }
+        if self.count == 0 {
+            return AppAction::Nothing;
+        }
         let e = self.entries[self.selected];
         if e.is_dir {
             self.navigate_into();
@@ -687,13 +794,20 @@ impl FileManagerApp {
     }
 
     fn clamp_scroll(&mut self, visible: usize) {
-        if self.count == 0 { self.scroll = 0; return; }
-        if self.selected < self.scroll { self.scroll = self.selected; }
+        if self.count == 0 {
+            self.scroll = 0;
+            return;
+        }
+        if self.selected < self.scroll {
+            self.scroll = self.selected;
+        }
         if self.selected >= self.scroll + visible {
             self.scroll = self.selected.saturating_sub(visible - 1);
         }
         let max_scroll = self.count.saturating_sub(visible);
-        if self.scroll > max_scroll { self.scroll = max_scroll; }
+        if self.scroll > max_scroll {
+            self.scroll = max_scroll;
+        }
     }
 
     fn fmt_size(buf: &mut [u8; 16], size: usize) -> &str {
@@ -726,12 +840,24 @@ impl FileManagerApp {
 
 impl App for FileManagerApp {
     fn title(&self) -> &str {
-        if self.view == FmView::ThisPc { "This PC" } else { "Files" }
+        if self.view == FmView::ThisPc {
+            "This PC"
+        } else {
+            "Files"
+        }
     }
-    fn preferred_size(&self) -> (usize, usize) { (560, 440) }
-    fn app_id(&self) -> &'static str { "filemanager" }
-    fn allow_multiple_instances(&self) -> bool { true }
-    fn refresh_interval_ms(&self) -> Option<u64> { None }
+    fn preferred_size(&self) -> (usize, usize) {
+        (560, 440)
+    }
+    fn app_id(&self) -> &'static str {
+        "filemanager"
+    }
+    fn allow_multiple_instances(&self) -> bool {
+        true
+    }
+    fn refresh_interval_ms(&self) -> Option<u64> {
+        None
+    }
 
     fn render(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
         if self.view == FmView::ThisPc {
@@ -788,13 +914,21 @@ impl FileManagerApp {
 
         // Drive tile(s)
         let mounted = crate::fat32::is_mounted();
-        let (used_kb, total_kb) = if mounted { crate::fat32::disk_space_kb() } else { (0, 0) };
+        let (used_kb, total_kb) = if mounted {
+            crate::fat32::disk_space_kb()
+        } else {
+            (0, 0)
+        };
         let (tx, ty_t, tw, th) = Self::tile_rect(0, cw);
         let tx = cx + tx;
         let ty_t = cy + ty_t;
-        let bg = if self.tile_sel == Some(0) { TILE_SEL }
-                 else if self.tile_hover == Some(0) { TILE_HOV }
-                 else { TILE_BG };
+        let bg = if self.tile_sel == Some(0) {
+            TILE_SEL
+        } else if self.tile_hover == Some(0) {
+            TILE_HOV
+        } else {
+            TILE_BG
+        };
         // Outer border
         framebuffer::fill_rect(tx, ty_t, tw, th, TILE_BORD);
         // Inner background
@@ -876,8 +1010,10 @@ impl FileManagerApp {
     fn mouse_click_this_pc(&mut self, rel_x: i32, rel_y: i32) -> AppAction {
         let (_, ph) = self.preferred_size();
         let (tx, ty_t, tw, th) = Self::tile_rect(0, self.preferred_size().0);
-        if rel_x >= tx as i32 && rel_x < (tx + tw) as i32
-            && rel_y >= ty_t as i32 && rel_y < (ty_t + th) as i32
+        if rel_x >= tx as i32
+            && rel_x < (tx + tw) as i32
+            && rel_y >= ty_t as i32
+            && rel_y < (ty_t + th) as i32
         {
             let now = uptime_ms();
             let is_dbl = now.saturating_sub(self.tile_last_click_ms) < DBL_CLICK_MS;
@@ -899,9 +1035,15 @@ impl FileManagerApp {
 
     fn mouse_move_this_pc(&mut self, rel_x: i32, rel_y: i32) -> AppAction {
         let (tx, ty_t, tw, th) = Self::tile_rect(0, self.preferred_size().0);
-        let new_hover = if rel_x >= tx as i32 && rel_x < (tx + tw) as i32
-            && rel_y >= ty_t as i32 && rel_y < (ty_t + th) as i32
-        { Some(0) } else { None };
+        let new_hover = if rel_x >= tx as i32
+            && rel_x < (tx + tw) as i32
+            && rel_y >= ty_t as i32
+            && rel_y < (ty_t + th) as i32
+        {
+            Some(0)
+        } else {
+            None
+        };
         if new_hover != self.tile_hover {
             self.tile_hover = new_hover;
             return AppAction::RedrawAll;
@@ -941,11 +1083,19 @@ impl FileManagerApp {
         let thispc_hover = self.hover_crumb == Some(usize::MAX);
         if thispc_hover {
             framebuffer::fill_rect(
-                draw_x.saturating_sub(2), hdr_ty.saturating_sub(2),
-                thispc_w + 4, 12, 0x142A40);
+                draw_x.saturating_sub(2),
+                hdr_ty.saturating_sub(2),
+                thispc_w + 4,
+                12,
+                0x142A40,
+            );
         }
-        framebuffer::draw_text_at(draw_x, hdr_ty, thispc_label,
-            if thispc_hover { CRUMB_HOV } else { CRUMB_COL });
+        framebuffer::draw_text_at(
+            draw_x,
+            hdr_ty,
+            thispc_label,
+            if thispc_hover { CRUMB_HOV } else { CRUMB_COL },
+        );
         draw_x += thispc_w;
         // Render breadcrumb segments (VFS path + any FAT32 subdir levels)
         let path = &self.cwd.data[..self.cwd.len];
@@ -961,7 +1111,9 @@ impl FileManagerApp {
         let sep_w = sep.len() * CHAR_W;
         for i in 0..total_segs {
             // Always draw a separator before each VFS/FAT32 segment
-            if draw_x + sep_w > crumb_clip { break; }
+            if draw_x + sep_w > crumb_clip {
+                break;
+            }
             framebuffer::draw_text_at(draw_x, hdr_ty, sep, CRUMB_SEP);
             draw_x += sep_w;
             let is_last = i == total_segs - 1;
@@ -979,14 +1131,24 @@ impl FileManagerApp {
                 core::str::from_utf8(&seg_str_buf[..flen]).unwrap_or("?")
             };
             let seg_px = seg_str.len() * CHAR_W;
-            if draw_x + seg_px > crumb_clip { break; }
-            let col = if is_last { CRUMB_CUR }
-                      else if Some(i) == self.hover_crumb { CRUMB_HOV }
-                      else { CRUMB_COL };
+            if draw_x + seg_px > crumb_clip {
+                break;
+            }
+            let col = if is_last {
+                CRUMB_CUR
+            } else if Some(i) == self.hover_crumb {
+                CRUMB_HOV
+            } else {
+                CRUMB_COL
+            };
             if Some(i) == self.hover_crumb && !is_last {
                 framebuffer::fill_rect(
-                    draw_x.saturating_sub(2), hdr_ty.saturating_sub(2),
-                    seg_px + 4, 12, 0x142A40);
+                    draw_x.saturating_sub(2),
+                    hdr_ty.saturating_sub(2),
+                    seg_px + 4,
+                    12,
+                    0x142A40,
+                );
             }
             framebuffer::draw_text_at(draw_x, hdr_ty, seg_str, col);
             draw_x += seg_px;
@@ -995,58 +1157,90 @@ impl FileManagerApp {
         // ── Column header ─────────────────────────────────────────────────
         let col_y = cy + HEADER_H;
         framebuffer::fill_rect(cx, col_y, cw, COL_HDR_H, COLHDR_BG);
-        framebuffer::draw_text_at(cx + PAD_X + PREFIX_W,
-                                  col_y + (COL_HDR_H - 8) / 2, "Name", COLHDR_COL);
+        framebuffer::draw_text_at(
+            cx + PAD_X + PREFIX_W,
+            col_y + (COL_HDR_H - 8) / 2,
+            "Name",
+            COLHDR_COL,
+        );
         let sz_x = cx + cw.saturating_sub(PAD_X + SIZE_COL_W);
         framebuffer::draw_text_at(sz_x, col_y + (COL_HDR_H - 8) / 2, "Size", COLHDR_COL);
         framebuffer::fill_rect(cx, col_y + COL_HDR_H - 1, cw, 1, BORDER_COL);
 
         // ── List area ─────────────────────────────────────────────────────
-        let list_y    = col_y + COL_HDR_H;
-        let list_h    = ch.saturating_sub(HEADER_H + COL_HDR_H + HINT_H);
-        let visible   = list_h / ROW_H;
-        let scroll    = self.scroll;
+        let list_y = col_y + COL_HDR_H;
+        let list_h = ch.saturating_sub(HEADER_H + COL_HDR_H + HINT_H);
+        let visible = list_h / ROW_H;
+        let scroll = self.scroll;
 
         if self.load_err {
             let ey = list_y + list_h / 3;
-            framebuffer::draw_text_at(cx + PAD_X, ey,
-                "[!]  Could not read directory", ERR_COL);
-            framebuffer::draw_text_at(cx + PAD_X, ey + ROW_H + 4,
-                "     Check that the path is valid.", COLHDR_COL);
+            framebuffer::draw_text_at(cx + PAD_X, ey, "[!]  Could not read directory", ERR_COL);
+            framebuffer::draw_text_at(
+                cx + PAD_X,
+                ey + ROW_H + 4,
+                "     Check that the path is valid.",
+                COLHDR_COL,
+            );
         } else if self.count == 0 {
-            framebuffer::draw_text_at(cx + PAD_X, list_y + list_h / 3,
-                "(empty directory)", EMPTY_COL);
+            framebuffer::draw_text_at(
+                cx + PAD_X,
+                list_y + list_h / 3,
+                "(empty directory)",
+                EMPTY_COL,
+            );
         } else {
             for vi in 0..visible {
                 let ei = scroll + vi;
-                if ei >= self.count { break; }
-                let e  = &self.entries[ei];
+                if ei >= self.count {
+                    break;
+                }
+                let e = &self.entries[ei];
                 let ry = list_y + vi * ROW_H;
                 let is_sel = ei == self.selected;
 
-                let row_bg = if is_sel { SEL_BG }
-                             else if Some(ei) == self.hover_row { HOVER_BG }
-                             else if vi % 2 == 1 { EVEN_BG }
-                             else { BG };
+                let row_bg = if is_sel {
+                    SEL_BG
+                } else if Some(ei) == self.hover_row {
+                    HOVER_BG
+                } else if vi % 2 == 1 {
+                    EVEN_BG
+                } else {
+                    BG
+                };
                 framebuffer::fill_rect(cx, ry, cw.saturating_sub(SCROLL_W), ROW_H, row_bg);
                 if is_sel {
                     // Thick left-edge accent bar (5 px) + right-edge accent (2 px)
                     framebuffer::fill_rect(cx, ry, 5, ROW_H, SEL_BORDER);
-                    framebuffer::fill_rect(cx + cw.saturating_sub(SCROLL_W + 2), ry, 2, ROW_H, SEL_BORDER);
+                    framebuffer::fill_rect(
+                        cx + cw.saturating_sub(SCROLL_W + 2),
+                        ry,
+                        2,
+                        ROW_H,
+                        SEL_BORDER,
+                    );
                 } else if Some(ei) == self.hover_row {
                     // Thin left indicator for hovered row so it doesn't look selected
                     framebuffer::fill_rect(cx, ry, 2, ROW_H, 0x1A3A58);
                 }
 
-                let ty  = ry + (ROW_H - 8) / 2;
-                let (icon, base_col) = if e.is_dir { ("[>] ", DIR_COL) }
-                                       else        { ("    ", FILE_COL) };
+                let ty = ry + (ROW_H - 8) / 2;
+                let (icon, base_col) = if e.is_dir {
+                    ("[>] ", DIR_COL)
+                } else {
+                    ("    ", FILE_COL)
+                };
                 let tcol = if is_sel { SEL_COL } else { base_col };
 
                 framebuffer::draw_text_at(cx + PAD_X, ty, icon, tcol);
-                let name_max = cw.saturating_sub(PAD_X + PREFIX_W + SIZE_COL_W + PAD_X + SCROLL_W) / CHAR_W;
-                framebuffer::draw_text_at(cx + PAD_X + PREFIX_W, ty,
-                                          truncate_str(e.name_str(), name_max), tcol);
+                let name_max =
+                    cw.saturating_sub(PAD_X + PREFIX_W + SIZE_COL_W + PAD_X + SCROLL_W) / CHAR_W;
+                framebuffer::draw_text_at(
+                    cx + PAD_X + PREFIX_W,
+                    ty,
+                    truncate_str(e.name_str(), name_max),
+                    tcol,
+                );
 
                 {
                     let mut sbuf = [0u8; 16];
@@ -1063,7 +1257,7 @@ impl FileManagerApp {
                     let srx = cx + cw.saturating_sub(PAD_X + sstr.len() * CHAR_W + SCROLL_W);
                     framebuffer::draw_text_at(srx, ty, sstr, sz_col);
                 }
-            }   // end for vi
+            } // end for vi
 
             // Scrollbar
             let sb_x = cx + cw.saturating_sub(SCROLL_W);
@@ -1072,9 +1266,16 @@ impl FileManagerApp {
                 let thumb_h = ((visible * list_h) / self.count).max(6);
                 let thumb_y = if self.count > visible {
                     (scroll * (list_h - thumb_h)) / (self.count - visible)
-                } else { 0 };
-                framebuffer::fill_rect(sb_x + 1, list_y + thumb_y,
-                                       SCROLL_W - 2, thumb_h, SCROLL_FG);
+                } else {
+                    0
+                };
+                framebuffer::fill_rect(
+                    sb_x + 1,
+                    list_y + thumb_y,
+                    SCROLL_W - 2,
+                    thumb_h,
+                    SCROLL_FG,
+                );
             }
         }
 
@@ -1103,12 +1304,26 @@ impl FileManagerApp {
                     framebuffer::draw_text_at(cx + PAD_X + 4 * CHAR_W, ty, msg, 0x88FF88);
                 } else {
                     let mut hx = cx + PAD_X;
-                    macro_rules! hkey { ($s:expr) => { { framebuffer::draw_text_at(hx, ty, $s, HINT_KEY); hx += $s.len() * CHAR_W; } } }
-                    macro_rules! hsep { ($s:expr) => { { framebuffer::draw_text_at(hx, ty, $s, HINT_COL); hx += $s.len() * CHAR_W; } } }
-                    hkey!("Enter"); hsep!("=open  ");
-                    hkey!("\u{2191}\u{2193}");    hsep!("=nav  ");
-                    hkey!("N");     hsep!("=file  ");
-                    hkey!("M");     hsep!("=dir");
+                    macro_rules! hkey {
+                        ($s:expr) => {{
+                            framebuffer::draw_text_at(hx, ty, $s, HINT_KEY);
+                            hx += $s.len() * CHAR_W;
+                        }};
+                    }
+                    macro_rules! hsep {
+                        ($s:expr) => {{
+                            framebuffer::draw_text_at(hx, ty, $s, HINT_COL);
+                            hx += $s.len() * CHAR_W;
+                        }};
+                    }
+                    hkey!("Enter");
+                    hsep!("=open  ");
+                    hkey!("\u{2191}\u{2193}");
+                    hsep!("=nav  ");
+                    hkey!("N");
+                    hsep!("=file  ");
+                    hkey!("M");
+                    hsep!("=dir");
                     let sel_can_edit = self.count > 0 && {
                         let e = &self.entries[self.selected];
                         let is_back = e.nlen == 2 && e.name[0] == b'.' && e.name[1] == b'.';
@@ -1116,8 +1331,10 @@ impl FileManagerApp {
                     };
                     if sel_can_edit {
                         hsep!("  ");
-                        hkey!("Del"); hsep!("=del  ");
-                        hkey!("R");   hsep!("=ren");
+                        hkey!("Del");
+                        hsep!("=del  ");
+                        hkey!("R");
+                        hsep!("=ren");
                     }
                     let esc = "Esc=close";
                     let ex = cx + cw.saturating_sub(PAD_X + esc.len() * CHAR_W);
@@ -1129,8 +1346,8 @@ impl FileManagerApp {
                 let lbl = "Delete \"";
                 framebuffer::draw_text_at(cx + PAD_X, ty, lbl, ERR_COL);
                 let mut hx = cx + PAD_X + lbl.len() * CHAR_W;
-                let fname = core::str::from_utf8(
-                    &self.prompt.buf[..self.prompt.len]).unwrap_or("?");
+                let fname =
+                    core::str::from_utf8(&self.prompt.buf[..self.prompt.len]).unwrap_or("?");
                 framebuffer::draw_text_at(hx, ty, fname, ERR_COL);
                 hx += self.prompt.len * CHAR_W;
                 framebuffer::draw_text_at(hx, ty, "\"?", ERR_COL);
@@ -1140,14 +1357,13 @@ impl FileManagerApp {
             }
             PromptKind::New | PromptKind::Mkdir | PromptKind::Rename => {
                 let lbl = match self.prompt.kind {
-                    PromptKind::New   => "New file: ",
+                    PromptKind::New => "New file: ",
                     PromptKind::Mkdir => "New folder: ",
-                    _                 => "Rename to: ",
+                    _ => "Rename to: ",
                 };
                 framebuffer::draw_text_at(cx + PAD_X, ty, lbl, PATH_LBL);
                 let ix = cx + PAD_X + lbl.len() * CHAR_W;
-                let input = core::str::from_utf8(
-                    &self.prompt.buf[..self.prompt.len]).unwrap_or("");
+                let input = core::str::from_utf8(&self.prompt.buf[..self.prompt.len]).unwrap_or("");
                 framebuffer::draw_text_at(ix, ty, input, PATH_COL);
                 // Blinking cursor placeholder
                 let cur_x = ix + self.prompt.len * CHAR_W;
@@ -1156,7 +1372,7 @@ impl FileManagerApp {
                 let ox = cx + cw.saturating_sub(PAD_X + ok.len() * CHAR_W);
                 framebuffer::draw_text_at(ox, ty, ok, HINT_KEY);
             }
-        }   // end match self.prompt.kind
+        } // end match self.prompt.kind
 
         // ── Context menu overlay (drawn on top of everything) ─────────────────
         if self.ctx.visible {
@@ -1165,8 +1381,16 @@ impl FileManagerApp {
             let mx = (cx as i32 + self.ctx.x).max(cx as i32) as usize;
             let my = (cy as i32 + self.ctx.y).max(cy as i32) as usize;
             // Clamp so the menu never overflows the window
-            let mx = if mx + mw > cx + cw { (cx + cw).saturating_sub(mw) } else { mx };
-            let my = if my + mh > cy + ch { (cy + ch).saturating_sub(mh) } else { my };
+            let mx = if mx + mw > cx + cw {
+                (cx + cw).saturating_sub(mw)
+            } else {
+                mx
+            };
+            let my = if my + mh > cy + ch {
+                (cy + ch).saturating_sub(mh)
+            } else {
+                my
+            };
             // Background + border
             framebuffer::fill_rect(mx, my, mw, mh, CTX_BORDER);
             framebuffer::fill_rect(mx + 1, my + 1, mw - 2, mh - 2, CTX_BG);
@@ -1177,8 +1401,12 @@ impl FileManagerApp {
                     framebuffer::fill_rect(mx + 1, iy, mw - 2, CTX_ITEM_H, CTX_SEL_BG);
                 }
                 let text_col = if item.enabled { CTX_COL } else { CTX_DIS };
-                framebuffer::draw_text_at(mx + CTX_PAD_X, iy + (CTX_ITEM_H - 8) / 2,
-                                          item.label, text_col);
+                framebuffer::draw_text_at(
+                    mx + CTX_PAD_X,
+                    iy + (CTX_ITEM_H - 8) / 2,
+                    item.label,
+                    text_col,
+                );
             }
         }
     }
@@ -1199,8 +1427,9 @@ impl FileManagerApp {
                     match self.prompt.kind {
                         PromptKind::New => {
                             if self.prompt.len > 0 {
-                                let name = core::str::from_utf8(
-                                    &self.prompt.buf[..self.prompt.len]).unwrap_or("");
+                                let name =
+                                    core::str::from_utf8(&self.prompt.buf[..self.prompt.len])
+                                        .unwrap_or("");
                                 if crate::fat32::is_mounted() {
                                     // Create directly on disk so it survives reboot
                                     let dir_c = if self.fat32_cluster != 0 {
@@ -1208,7 +1437,9 @@ impl FileManagerApp {
                                     } else {
                                         fs::fat32_root_cluster()
                                     };
-                                    if let Some(id) = fs::fat32_create_and_open(dir_c, name.as_bytes()) {
+                                    if let Some(id) =
+                                        fs::fat32_create_and_open(dir_c, name.as_bytes())
+                                    {
                                         let mut buf = [0u8; 128];
                                         let prefix = b"/fat32/";
                                         buf[..prefix.len()].copy_from_slice(prefix);
@@ -1219,7 +1450,9 @@ impl FileManagerApp {
                                         self.op_ok = Some("File created");
                                         self.op_err = None;
                                     } else {
-                                        self.op_err = Some("Create failed — name may already exist or be invalid");
+                                        self.op_err = Some(
+                                            "Create failed — name may already exist or be invalid",
+                                        );
                                     }
                                 } else {
                                     if fs::dyn_create_file(self.prompt.target, name).is_err() {
@@ -1235,8 +1468,9 @@ impl FileManagerApp {
                         }
                         PromptKind::Mkdir => {
                             if self.prompt.len > 0 {
-                                let name = core::str::from_utf8(
-                                    &self.prompt.buf[..self.prompt.len]).unwrap_or("");
+                                let name =
+                                    core::str::from_utf8(&self.prompt.buf[..self.prompt.len])
+                                        .unwrap_or("");
                                 if crate::fat32::is_mounted() {
                                     let dir_c = if self.fat32_cluster != 0 {
                                         self.fat32_cluster
@@ -1244,7 +1478,8 @@ impl FileManagerApp {
                                         fs::fat32_root_cluster()
                                     };
                                     if !crate::fat32::create_dir(dir_c, name.as_bytes()) {
-                                        self.op_err = Some("Create folder failed — name may already exist");
+                                        self.op_err =
+                                            Some("Create folder failed — name may already exist");
                                     } else {
                                         self.op_ok = Some("Folder created");
                                         self.op_err = None;
@@ -1263,25 +1498,31 @@ impl FileManagerApp {
                         }
                         PromptKind::Rename => {
                             if self.prompt.len > 0 {
-                                let new_name = core::str::from_utf8(
-                                    &self.prompt.buf[..self.prompt.len]).unwrap_or("");
+                                let new_name =
+                                    core::str::from_utf8(&self.prompt.buf[..self.prompt.len])
+                                        .unwrap_or("");
                                 if fs::is_fat32_id(self.prompt.target) {
                                     // FAT32 rename: need old name from cache
-                                    if let Some(old_name) = fs::fat32_entry_name(self.prompt.target) {
+                                    if let Some(old_name) = fs::fat32_entry_name(self.prompt.target)
+                                    {
                                         let dir_c = if self.fat32_cluster != 0 {
                                             self.fat32_cluster
                                         } else {
                                             fs::fat32_root_cluster()
                                         };
                                         if !crate::fat32::rename_entry(
-                                            dir_c, &old_name.0[..old_name.1], new_name.as_bytes()) {
+                                            dir_c,
+                                            &old_name.0[..old_name.1],
+                                            new_name.as_bytes(),
+                                        ) {
                                             self.op_err = Some("Rename failed");
                                         } else {
                                             self.op_ok = Some("Renamed");
                                             self.op_err = None;
                                         }
                                     } else {
-                                        self.op_err = Some("Rename failed — entry not found in cache");
+                                        self.op_err =
+                                            Some("Rename failed — entry not found in cache");
                                     }
                                 } else {
                                     if fs::dyn_rename_file(self.prompt.target, new_name).is_err() {
@@ -1313,7 +1554,8 @@ impl FileManagerApp {
                             } else {
                                 match fs::dyn_delete_node(self.prompt.target) {
                                     Err(crate::fs::VfsError::NotEmpty) => {
-                                        self.op_err = Some("Not empty \u{2014} delete contents first");
+                                        self.op_err =
+                                            Some("Not empty \u{2014} delete contents first");
                                     }
                                     _ => {
                                         self.op_ok = Some("Deleted");
@@ -1326,7 +1568,9 @@ impl FileManagerApp {
                     }
                     self.prompt = FmPrompt::DEFAULT;
                     self.load_dir();
-                    if let Some(act) = open_file_action { return act; }
+                    if let Some(act) = open_file_action {
+                        return act;
+                    }
                     return AppAction::RedrawAll;
                 }
                 Key::Backspace => {
@@ -1338,7 +1582,10 @@ impl FileManagerApp {
                 }
                 Key::Char(c) if self.prompt.kind != PromptKind::ConfirmDel => {
                     // Accept printable ASCII except '/' (invalid in filenames)
-                    let invalid_char = matches!(c, b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|');
+                    let invalid_char = matches!(
+                        c,
+                        b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|'
+                    );
                     if c >= 0x20 && c < 0x7F && !invalid_char && self.prompt.len < 32 {
                         self.prompt.buf[self.prompt.len] = c;
                         self.prompt.len += 1;
@@ -1351,9 +1598,9 @@ impl FileManagerApp {
         }
 
         // ── Normal navigation mode ────────────────────────────────────────────
-        self.op_err = None;  // clear stale error on any new keypress
-        self.op_ok  = None;  // clear stale success message on any new keypress
-        let old_sel    = self.selected;
+        self.op_err = None; // clear stale error on any new keypress
+        self.op_ok = None; // clear stale success message on any new keypress
+        let old_sel = self.selected;
         let old_scroll = self.scroll;
         match key {
             Key::Escape => {
@@ -1363,13 +1610,21 @@ impl FileManagerApp {
                 return AppAction::RedrawAll;
             }
             Key::ArrowUp => {
-                if self.selected > 0 { self.selected -= 1; }
+                if self.selected > 0 {
+                    self.selected -= 1;
+                }
             }
             Key::ArrowDown => {
-                if self.selected + 1 < self.count { self.selected += 1; }
+                if self.selected + 1 < self.count {
+                    self.selected += 1;
+                }
             }
-            Key::Char(b'g') | Key::Home => { self.selected = 0; }
-            Key::Char(b'G') | Key::End  => { self.selected = self.count.saturating_sub(1); }
+            Key::Char(b'g') | Key::Home => {
+                self.selected = 0;
+            }
+            Key::Char(b'G') | Key::End => {
+                self.selected = self.count.saturating_sub(1);
+            }
             Key::Tab | Key::PageDown => {
                 self.selected = (self.selected + visible).min(self.count.saturating_sub(1));
             }
@@ -1381,8 +1636,10 @@ impl FileManagerApp {
                 if self.fat32_stack_depth > 0 || self.fat32_cluster != 0 {
                     // Go up one FAT32 level using navigate_into's ".." logic
                     // synthesise a ".." selection
-                    if self.count > 0 && self.entries[0].nlen == 2
-                        && self.entries[0].name[0] == b'.' && self.entries[0].name[1] == b'.'
+                    if self.count > 0
+                        && self.entries[0].nlen == 2
+                        && self.entries[0].name[0] == b'.'
+                        && self.entries[0].name[1] == b'.'
                     {
                         self.selected = 0;
                         self.navigate_into();
@@ -1411,9 +1668,9 @@ impl FileManagerApp {
                 // Start "new file" prompt.
                 let target = fs::resolve_node_id(self.cwd.as_str()).unwrap_or(0);
                 self.prompt = FmPrompt {
-                    kind:   PromptKind::New,
-                    buf:    [0u8; 32],
-                    len:    0,
+                    kind: PromptKind::New,
+                    buf: [0u8; 32],
+                    len: 0,
                     target,
                 };
                 return AppAction::RedrawAll;
@@ -1422,9 +1679,9 @@ impl FileManagerApp {
                 // Start "new folder" (mkdir) prompt.
                 let target = fs::resolve_node_id(self.cwd.as_str()).unwrap_or(0);
                 self.prompt = FmPrompt {
-                    kind:   PromptKind::Mkdir,
-                    buf:    [0u8; 32],
-                    len:    0,
+                    kind: PromptKind::Mkdir,
+                    buf: [0u8; 32],
+                    len: 0,
                     target,
                 };
                 return AppAction::RedrawAll;
@@ -1438,9 +1695,9 @@ impl FileManagerApp {
                         let mut buf = [0u8; 32];
                         buf[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
                         self.prompt = FmPrompt {
-                            kind:   PromptKind::ConfirmDel,
+                            kind: PromptKind::ConfirmDel,
                             buf,
-                            len:    e.nlen,
+                            len: e.nlen,
                             target: e.node_id,
                         };
                         return AppAction::RedrawAll;
@@ -1456,9 +1713,9 @@ impl FileManagerApp {
                         let mut buf = [0u8; 32];
                         buf[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
                         self.prompt = FmPrompt {
-                            kind:   PromptKind::Rename,
+                            kind: PromptKind::Rename,
                             buf,
-                            len:    e.nlen,
+                            len: e.nlen,
                             target: e.node_id,
                         };
                         return AppAction::RedrawAll;
@@ -1474,9 +1731,17 @@ impl FileManagerApp {
                     if e.is_fat32 && !is_up {
                         let mut name = [0u8; 64];
                         name[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
-                        let src_cluster = if self.fat32_cluster != 0 { self.fat32_cluster }
-                                          else { fs::fat32_root_cluster() };
-                        self.clipboard = Clipboard { name, name_len: e.nlen, src_cluster, is_cut: false };
+                        let src_cluster = if self.fat32_cluster != 0 {
+                            self.fat32_cluster
+                        } else {
+                            fs::fat32_root_cluster()
+                        };
+                        self.clipboard = Clipboard {
+                            name,
+                            name_len: e.nlen,
+                            src_cluster,
+                            is_cut: false,
+                        };
                         return AppAction::RedrawAll;
                     }
                 }
@@ -1488,9 +1753,17 @@ impl FileManagerApp {
                     if e.is_fat32 && !is_up {
                         let mut name = [0u8; 64];
                         name[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
-                        let src_cluster = if self.fat32_cluster != 0 { self.fat32_cluster }
-                                          else { fs::fat32_root_cluster() };
-                        self.clipboard = Clipboard { name, name_len: e.nlen, src_cluster, is_cut: true };
+                        let src_cluster = if self.fat32_cluster != 0 {
+                            self.fat32_cluster
+                        } else {
+                            fs::fat32_root_cluster()
+                        };
+                        self.clipboard = Clipboard {
+                            name,
+                            name_len: e.nlen,
+                            src_cluster,
+                            is_cut: true,
+                        };
                         return AppAction::RedrawAll;
                     }
                 }
@@ -1511,7 +1784,7 @@ impl FileManagerApp {
     }
 
     fn mouse_click_files(&mut self, rel_x: i32, rel_y: i32) -> AppAction {
-        self.op_ok  = None;
+        self.op_ok = None;
         self.op_err = None;
         // If context menu is open, check for a click on a menu item first.
         if self.ctx.visible {
@@ -1519,8 +1792,8 @@ impl FileManagerApp {
             let mh = self.ctx.height() as i32;
             let (_, ph) = self.preferred_size();
             let cw = ph as i32; // approximation not needed — use stored values
-            // We stored ctx.x/y relative to the client area
-            // Clamp the menu origin the same way render() does (simplified: just use ctx.x/y)
+                                // We stored ctx.x/y relative to the client area
+                                // Clamp the menu origin the same way render() does (simplified: just use ctx.x/y)
             let mx = self.ctx.x;
             let my = self.ctx.y;
             if rel_x >= mx && rel_x < mx + mw && rel_y >= my && rel_y < my + mh {
@@ -1567,14 +1840,16 @@ impl FileManagerApp {
             let path = &path_buf[..path_len];
             let mut segs = [(0usize, 0usize); MAX_CRUMBS];
             let vfs_seg_count = parse_crumbs(path, &mut segs);
-            let fat32_depth        = self.fat32_stack_depth;
-            let fat32_crumb_nlens  = self.fat32_crumb_nlens;
+            let fat32_depth = self.fat32_stack_depth;
+            let fat32_crumb_nlens = self.fat32_crumb_nlens;
             let fat32_cluster_stack = self.fat32_cluster_stack;
             let skip_bare_root = fat32_depth > 0 && vfs_seg_count == 1;
             let total_segs = (if skip_bare_root { 0 } else { vfs_seg_count }) + fat32_depth;
             let mut x = vfs_x0;
             for i in 0..total_segs {
-                if i > 0 { x += sep_w; }
+                if i > 0 {
+                    x += sep_w;
+                }
                 let seg_w: i32 = if !skip_bare_root && i < vfs_seg_count {
                     let (_, bl) = segs[i];
                     (bl * CHAR_W) as i32
@@ -1595,7 +1870,8 @@ impl FileManagerApp {
                                 let mut new_path = PathBuf::root();
                                 for j in 1..=i {
                                     let (s, l) = segs[j];
-                                    let seg_name = core::str::from_utf8(&path[s..s + l]).unwrap_or("");
+                                    let seg_name =
+                                        core::str::from_utf8(&path[s..s + l]).unwrap_or("");
                                     new_path.push(seg_name);
                                 }
                                 self.cwd = new_path;
@@ -1622,16 +1898,20 @@ impl FileManagerApp {
         }
 
         let list_top = (HEADER_H + COL_HDR_H) as i32;
-        if rel_y < list_top { return AppAction::Nothing; }
+        if rel_y < list_top {
+            return AppAction::Nothing;
+        }
         let row_in_view = ((rel_y - list_top) as usize) / ROW_H;
         let row_abs = self.scroll + row_in_view;
-        if row_abs >= self.count { return AppAction::Nothing; }
+        if row_abs >= self.count {
+            return AppAction::Nothing;
+        }
 
-        let now    = uptime_ms();
-        let is_dbl = row_abs == self.last_click_row
-            && now.saturating_sub(self.last_click_ms) < DBL_CLICK_MS;
+        let now = uptime_ms();
+        let is_dbl =
+            row_abs == self.last_click_row && now.saturating_sub(self.last_click_ms) < DBL_CLICK_MS;
 
-        self.last_click_ms  = now;
+        self.last_click_ms = now;
         self.last_click_row = row_abs;
         let old_sel = self.selected;
         self.selected = row_abs;
@@ -1655,8 +1935,14 @@ impl FileManagerApp {
             let my = self.ctx.y;
             let new_hover = if rel_x >= mx && rel_x < mx + mw && rel_y >= my && rel_y < my + mh {
                 let idx = ((rel_y - my - 2) / CTX_ITEM_H as i32) as usize;
-                if idx < self.ctx.item_count { Some(idx) } else { None }
-            } else { None };
+                if idx < self.ctx.item_count {
+                    Some(idx)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             if new_hover != self.ctx.hover {
                 self.ctx.hover = new_hover;
                 return AppAction::RedrawArea(
@@ -1685,14 +1971,16 @@ impl FileManagerApp {
                 let path = &self.cwd.data[..self.cwd.len];
                 let mut segs = [(0usize, 0usize); MAX_CRUMBS];
                 let vfs_seg_count = parse_crumbs(path, &mut segs);
-                let fat32_depth       = self.fat32_stack_depth;
+                let fat32_depth = self.fat32_stack_depth;
                 let fat32_crumb_nlens = self.fat32_crumb_nlens;
                 let skip_bare_root = fat32_depth > 0 && vfs_seg_count == 1;
                 let total_segs = (if skip_bare_root { 0 } else { vfs_seg_count }) + fat32_depth;
                 let mut x = vfs_x0;
                 let mut found = None;
                 for i in 0..total_segs {
-                    if i > 0 { x += sep_w; }
+                    if i > 0 {
+                        x += sep_w;
+                    }
                     let seg_w: i32 = if !skip_bare_root && i < vfs_seg_count {
                         let (_, bl) = segs[i];
                         (bl * CHAR_W) as i32
@@ -1719,7 +2007,11 @@ impl FileManagerApp {
         let new_hover = if rel_y >= list_top {
             let row_in_view = ((rel_y - list_top) as usize) / ROW_H;
             let row_abs = self.scroll + row_in_view;
-            if row_abs < self.count { Some(row_abs) } else { None }
+            if row_abs < self.count {
+                Some(row_abs)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -1784,29 +2076,49 @@ impl FileManagerApp {
 
         if row == usize::MAX || row >= self.count {
             // Empty-area menu
-            macro_rules! push { ($act:expr, $lbl:expr, $en:expr) => {
-                if menu.item_count < 5 {
-                    menu.items[menu.item_count] = CtxItem { action: $act, label: $lbl, enabled: $en };
-                    menu.item_count += 1;
-                }
-            }; }
-            push!(CtxAction::NewFile, "New file",   true);
-            push!(CtxAction::NewDir,  "New folder", true);
-            push!(CtxAction::Paste,   "Paste",      self.clipboard.is_set());
+            macro_rules! push {
+                ($act:expr, $lbl:expr, $en:expr) => {
+                    if menu.item_count < 5 {
+                        menu.items[menu.item_count] = CtxItem {
+                            action: $act,
+                            label: $lbl,
+                            enabled: $en,
+                        };
+                        menu.item_count += 1;
+                    }
+                };
+            }
+            push!(CtxAction::NewFile, "New file", true);
+            push!(CtxAction::NewDir, "New folder", true);
+            push!(CtxAction::Paste, "Paste", self.clipboard.is_set());
         } else {
             let e = self.entries[row];
             let is_up = e.nlen == 2 && e.name[0] == b'.' && e.name[1] == b'.';
-            macro_rules! push { ($act:expr, $lbl:expr, $en:expr) => {
-                if menu.item_count < 5 {
-                    menu.items[menu.item_count] = CtxItem { action: $act, label: $lbl, enabled: $en };
-                    menu.item_count += 1;
-                }
-            }; }
-            push!(CtxAction::Open,    "Open",   true);
-            push!(CtxAction::Copy,    "Copy",   e.is_fat32 && !is_up);
-            push!(CtxAction::Cut,     "Cut",    e.is_fat32 && !is_up);
-            push!(CtxAction::Rename,  "Rename", (e.is_dyn || e.is_fat32) && !is_up);
-            push!(CtxAction::Delete,  "Delete", (e.is_dyn || e.is_fat32) && !is_up);
+            macro_rules! push {
+                ($act:expr, $lbl:expr, $en:expr) => {
+                    if menu.item_count < 5 {
+                        menu.items[menu.item_count] = CtxItem {
+                            action: $act,
+                            label: $lbl,
+                            enabled: $en,
+                        };
+                        menu.item_count += 1;
+                    }
+                };
+            }
+            push!(CtxAction::Open, "Open", true);
+            push!(CtxAction::Copy, "Copy", e.is_fat32 && !is_up);
+            push!(CtxAction::Cut, "Cut", e.is_fat32 && !is_up);
+            push!(
+                CtxAction::Rename,
+                "Rename",
+                (e.is_dyn || e.is_fat32) && !is_up
+            );
+            push!(
+                CtxAction::Delete,
+                "Delete",
+                (e.is_dyn || e.is_fat32) && !is_up
+            );
         }
         self.ctx = menu;
     }
@@ -1819,19 +2131,29 @@ impl FileManagerApp {
                     let old = self.selected;
                     self.selected = self.ctx.target_row;
                     let act = self.open_selected();
-                    if matches!(act, AppAction::Nothing) { self.selected = old; }
+                    if matches!(act, AppAction::Nothing) {
+                        self.selected = old;
+                    }
                     return act;
                 }
             }
             CtxAction::NewFile => {
                 let target = fs::resolve_node_id(self.cwd.as_str()).unwrap_or(0);
-                self.prompt = FmPrompt { kind: PromptKind::New, buf: [0u8; 32],
-                                         len: 0, target };
+                self.prompt = FmPrompt {
+                    kind: PromptKind::New,
+                    buf: [0u8; 32],
+                    len: 0,
+                    target,
+                };
             }
             CtxAction::NewDir => {
                 let target = fs::resolve_node_id(self.cwd.as_str()).unwrap_or(0);
-                self.prompt = FmPrompt { kind: PromptKind::Mkdir, buf: [0u8; 32],
-                                         len: 0, target };
+                self.prompt = FmPrompt {
+                    kind: PromptKind::Mkdir,
+                    buf: [0u8; 32],
+                    len: 0,
+                    target,
+                };
             }
             CtxAction::Rename => {
                 if self.ctx.target_row < self.count {
@@ -1840,8 +2162,12 @@ impl FileManagerApp {
                     if !is_back && (e.is_dyn || e.is_fat32) {
                         let mut buf = [0u8; 32];
                         buf[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
-                        self.prompt = FmPrompt { kind: PromptKind::Rename,
-                                                 buf, len: e.nlen, target: e.node_id };
+                        self.prompt = FmPrompt {
+                            kind: PromptKind::Rename,
+                            buf,
+                            len: e.nlen,
+                            target: e.node_id,
+                        };
                     }
                 }
             }
@@ -1852,8 +2178,12 @@ impl FileManagerApp {
                     if !is_back && (e.is_dyn || e.is_fat32) {
                         let mut buf = [0u8; 32];
                         buf[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
-                        self.prompt = FmPrompt { kind: PromptKind::ConfirmDel,
-                                                 buf, len: e.nlen, target: e.node_id };
+                        self.prompt = FmPrompt {
+                            kind: PromptKind::ConfirmDel,
+                            buf,
+                            len: e.nlen,
+                            target: e.node_id,
+                        };
                     }
                 }
             }
@@ -1864,9 +2194,17 @@ impl FileManagerApp {
                     if e.is_fat32 && !is_up {
                         let mut name = [0u8; 64];
                         name[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
-                        let src_cluster = if self.fat32_cluster != 0 { self.fat32_cluster }
-                                          else { fs::fat32_root_cluster() };
-                        self.clipboard = Clipboard { name, name_len: e.nlen, src_cluster, is_cut: false };
+                        let src_cluster = if self.fat32_cluster != 0 {
+                            self.fat32_cluster
+                        } else {
+                            fs::fat32_root_cluster()
+                        };
+                        self.clipboard = Clipboard {
+                            name,
+                            name_len: e.nlen,
+                            src_cluster,
+                            is_cut: false,
+                        };
                     }
                 }
             }
@@ -1877,9 +2215,17 @@ impl FileManagerApp {
                     if e.is_fat32 && !is_up {
                         let mut name = [0u8; 64];
                         name[..e.nlen].copy_from_slice(&e.name[..e.nlen]);
-                        let src_cluster = if self.fat32_cluster != 0 { self.fat32_cluster }
-                                          else { fs::fat32_root_cluster() };
-                        self.clipboard = Clipboard { name, name_len: e.nlen, src_cluster, is_cut: true };
+                        let src_cluster = if self.fat32_cluster != 0 {
+                            self.fat32_cluster
+                        } else {
+                            fs::fat32_root_cluster()
+                        };
+                        self.clipboard = Clipboard {
+                            name,
+                            name_len: e.nlen,
+                            src_cluster,
+                            is_cut: true,
+                        };
                     }
                 }
             }
@@ -1902,44 +2248,64 @@ fn parse_crumbs(path: &[u8], out: &mut [(usize, usize); MAX_CRUMBS]) -> usize {
     let mut i = 1usize;
     while i < path.len() && count < MAX_CRUMBS {
         let start = i;
-        while i < path.len() && path[i] != b'/' { i += 1; }
+        while i < path.len() && path[i] != b'/' {
+            i += 1;
+        }
         if start < i {
             out[count] = (start, i - start);
             count += 1;
         }
-        if i < path.len() { i += 1; } // skip '/'
+        if i < path.len() {
+            i += 1;
+        } // skip '/'
     }
     count
 }
 
 fn truncate_str(s: &str, max: usize) -> &str {
     let b = s.as_bytes();
-    if b.len() <= max { return s; }
+    if b.len() <= max {
+        return s;
+    }
     let mut end = max;
-    while end > 0 && (b[end] & 0xC0) == 0x80 { end -= 1; }
+    while end > 0 && (b[end] & 0xC0) == 0x80 {
+        end -= 1;
+    }
     core::str::from_utf8(&b[..end]).unwrap_or("")
 }
 
 fn fmt_uint(buf: &mut [u8; 16], pos: usize, mut n: usize) -> usize {
     if n == 0 {
-        if pos < buf.len() { buf[pos] = b'0'; }
+        if pos < buf.len() {
+            buf[pos] = b'0';
+        }
         return pos + 1;
     }
     let start = pos;
     let mut i = pos;
-    while n > 0 && i < buf.len() { buf[i] = b'0' + (n % 10) as u8; n /= 10; i += 1; }
+    while n > 0 && i < buf.len() {
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        i += 1;
+    }
     buf[start..i].reverse();
     i
 }
 
 fn fmt_uint_u64(buf: &mut [u8; 24], pos: usize, mut n: u64) -> usize {
     if n == 0 {
-        if pos < buf.len() { buf[pos] = b'0'; }
+        if pos < buf.len() {
+            buf[pos] = b'0';
+        }
         return pos + 1;
     }
     let start = pos;
     let mut i = pos;
-    while n > 0 && i < buf.len() { buf[i] = b'0' + (n % 10) as u8; n /= 10; i += 1; }
+    while n > 0 && i < buf.len() {
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        i += 1;
+    }
     buf[start..i].reverse();
     i
 }
@@ -1949,14 +2315,33 @@ fn fmt_count(buf: &mut [u8; 20], n: usize) -> &str {
     let end = {
         let mut i = 0usize;
         let mut v = n;
-        if v == 0 { tmp[0] = b'0'; i = 1; }
-        else { while v > 0 && i < tmp.len() { tmp[i] = b'0' + (v % 10) as u8; v /= 10; i += 1; } tmp[..i].reverse(); }
+        if v == 0 {
+            tmp[0] = b'0';
+            i = 1;
+        } else {
+            while v > 0 && i < tmp.len() {
+                tmp[i] = b'0' + (v % 10) as u8;
+                v /= 10;
+                i += 1;
+            }
+            tmp[..i].reverse();
+        }
         i
     };
     let nstr = core::str::from_utf8(&tmp[..end]).unwrap_or("0");
     let mut i = 0usize;
-    for b in nstr.bytes() { if i < buf.len() { buf[i] = b; i += 1; } }
-    for b in b" items" { if i < buf.len() { buf[i] = *b; i += 1; } }
+    for b in nstr.bytes() {
+        if i < buf.len() {
+            buf[i] = b;
+            i += 1;
+        }
+    }
+    for b in b" items" {
+        if i < buf.len() {
+            buf[i] = *b;
+            i += 1;
+        }
+    }
     core::str::from_utf8(&buf[..i]).unwrap_or("")
 }
 
@@ -1966,9 +2351,9 @@ fn hex_u16(v: u16) -> ([u8; 4], usize) {
     let hex = b"0123456789abcdef";
     let buf = [
         hex[((v >> 12) & 0xF) as usize],
-        hex[((v >>  8) & 0xF) as usize],
-        hex[((v >>  4) & 0xF) as usize],
-        hex[( v        & 0xF) as usize],
+        hex[((v >> 8) & 0xF) as usize],
+        hex[((v >> 4) & 0xF) as usize],
+        hex[(v & 0xF) as usize],
     ];
     (buf, 4)
 }

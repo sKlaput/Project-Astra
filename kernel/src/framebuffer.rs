@@ -74,8 +74,7 @@ pub fn draw_text_at(x: usize, y: usize, text: &str, color_rgb: u32) -> bool {
     // scissor rect, skip all glyph work (avoids thousands of put_pixel calls
     // that would each return immediately after the scissor check).
     if writer.sc_active
-        && (y + GLYPH_HEIGHT <= writer.sc_y0 || y >= writer.sc_y1
-            || x >= writer.sc_x1)
+        && (y + GLYPH_HEIGHT <= writer.sc_y0 || y >= writer.sc_y1 || x >= writer.sc_x1)
     {
         return true;
     }
@@ -117,13 +116,17 @@ pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color_rgb: u32) {
     }
     let color = writer.color_from_rgb24(color_rgb);
     let (x0, x1, y0, y1) = writer.scissor_clip(x, y, x + w, y + h);
-    if x0 >= x1 || y0 >= y1 { return; }
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
     let width = writer.width;
     let buf_len = writer.backbuffer.len();
     for ry in y0..y1 {
         let row_start = ry * width + x0;
-        let row_end   = ry * width + x1;
-        if row_end > buf_len { break; }
+        let row_end = ry * width + x1;
+        if row_end > buf_len {
+            break;
+        }
         writer.backbuffer[row_start..row_end].fill(color);
     }
 }
@@ -143,11 +146,16 @@ pub fn read_rect(x: usize, y: usize, w: usize, h: usize, dst: &mut [u32]) -> usi
     let mut count = 0;
     for ry in y..y_end {
         let row_start = ry * width + x;
-        let row_end   = row_start + row_px;
-        if row_end > buf_len { break; }
+        let row_end = row_start + row_px;
+        if row_end > buf_len {
+            break;
+        }
         let copy_n = row_px.min(dst.len().saturating_sub(count));
-        if copy_n == 0 { break; }
-        dst[count..count + copy_n].copy_from_slice(&writer.backbuffer[row_start..row_start + copy_n]);
+        if copy_n == 0 {
+            break;
+        }
+        dst[count..count + copy_n]
+            .copy_from_slice(&writer.backbuffer[row_start..row_start + copy_n]);
         count += copy_n;
     }
     count
@@ -167,21 +175,36 @@ pub fn write_rect(x: usize, y: usize, w: usize, h: usize, src: &[u32]) {
     let mut src_off = 0usize;
     for ry in y..y_end {
         let row_start = ry * width + x;
-        let row_end   = row_start + row_px;
-        if row_end > buf_len { break; }
+        let row_end = row_start + row_px;
+        if row_end > buf_len {
+            break;
+        }
         let copy_n = row_px.min(src.len().saturating_sub(src_off));
-        if copy_n == 0 { break; }
-        writer.backbuffer[row_start..row_start + copy_n].copy_from_slice(&src[src_off..src_off + copy_n]);
+        if copy_n == 0 {
+            break;
+        }
+        writer.backbuffer[row_start..row_start + copy_n]
+            .copy_from_slice(&src[src_off..src_off + copy_n]);
         src_off += copy_n;
     }
 }
 
 /// Write a sub-region of `src` (row-major, total row width `src_w`) into the backbuffer.
 /// Reads from (sub_x, sub_y) in src with size (w, h), writes to (dst_x, dst_y) in backbuffer.
-pub fn write_rect_sub(dst_x: usize, dst_y: usize, w: usize, h: usize,
-                       src: &[u32], src_w: usize, sub_x: usize, sub_y: usize) {
+pub fn write_rect_sub(
+    dst_x: usize,
+    dst_y: usize,
+    w: usize,
+    h: usize,
+    src: &[u32],
+    src_w: usize,
+    sub_x: usize,
+    sub_y: usize,
+) {
     let mut writer = WRITER.lock();
-    if !writer.enabled || writer.backbuffer.is_empty() { return; }
+    if !writer.enabled || writer.backbuffer.is_empty() {
+        return;
+    }
     let x_end = (dst_x + w).min(writer.width);
     let y_end = (dst_y + h).min(writer.height);
     let row_px = x_end.saturating_sub(dst_x);
@@ -190,10 +213,12 @@ pub fn write_rect_sub(dst_x: usize, dst_y: usize, w: usize, h: usize,
     for ry in dst_y..y_end {
         let src_row = sub_y + (ry - dst_y);
         let src_start = src_row * src_w + sub_x;
-        let src_end   = src_start + row_px;
+        let src_end = src_start + row_px;
         let dst_start = ry * width + dst_x;
-        let dst_end   = dst_start + row_px;
-        if src_end > src.len() || dst_end > buf_len { break; }
+        let dst_end = dst_start + row_px;
+        if src_end > src.len() || dst_end > buf_len {
+            break;
+        }
         writer.backbuffer[dst_start..dst_end].copy_from_slice(&src[src_start..src_end]);
     }
 }
@@ -327,10 +352,20 @@ impl FramebufferWriter {
     // ── Backbuffer pixel write ────────────────────────────────────────────
 
     #[inline(always)]
-    fn scissor_clip(&self, x: usize, y: usize, x_end: usize, y_end: usize) -> (usize, usize, usize, usize) {
+    fn scissor_clip(
+        &self,
+        x: usize,
+        y: usize,
+        x_end: usize,
+        y_end: usize,
+    ) -> (usize, usize, usize, usize) {
         if self.sc_active {
-            (x.max(self.sc_x0), x_end.min(self.sc_x1).min(self.width),
-             y.max(self.sc_y0), y_end.min(self.sc_y1).min(self.height))
+            (
+                x.max(self.sc_x0),
+                x_end.min(self.sc_x1).min(self.width),
+                y.max(self.sc_y0),
+                y_end.min(self.sc_y1).min(self.height),
+            )
         } else {
             (x, x_end.min(self.width), y, y_end.min(self.height))
         }
@@ -340,7 +375,9 @@ impl FramebufferWriter {
         if x >= self.width || y >= self.height {
             return;
         }
-        if self.sc_active && (x < self.sc_x0 || x >= self.sc_x1 || y < self.sc_y0 || y >= self.sc_y1) {
+        if self.sc_active
+            && (x < self.sc_x0 || x >= self.sc_x1 || y < self.sc_y0 || y >= self.sc_y1)
+        {
             return;
         }
         let idx = y * self.width + x;
@@ -368,7 +405,9 @@ impl FramebufferWriter {
         let x_end = (x + w).min(self.width);
         let y_end = (y + h).min(self.height);
         let row_px = x_end.saturating_sub(x);
-        if row_px == 0 || y >= y_end { return; }
+        if row_px == 0 || y >= y_end {
+            return;
+        }
 
         // Backbuffer stores hardware-format pixels (color_from_rgb24 is applied
         // at fill_rect time), so we can copy each scanline directly as raw bytes
@@ -380,7 +419,9 @@ impl FramebufferWriter {
 
         for py in y..y_end {
             let src_idx = py * self.width + x;
-            if src_idx + row_px > self.backbuffer.len() { break; }
+            if src_idx + row_px > self.backbuffer.len() {
+                break;
+            }
             let dst_byte_offset = py * self.pitch + x * bytes_per_px;
             unsafe {
                 let src = self.backbuffer.as_ptr().add(src_idx) as *const u8;
@@ -465,7 +506,9 @@ impl FramebufferWriter {
         for (row, bits) in glyph.iter().enumerate() {
             let py = y + row;
             // Skip rows outside the scissor before testing individual bits.
-            if self.sc_active && (py < self.sc_y0 || py >= self.sc_y1) { continue; }
+            if self.sc_active && (py < self.sc_y0 || py >= self.sc_y1) {
+                continue;
+            }
             for col in 0..GLYPH_WIDTH {
                 if bits & (1 << (GLYPH_WIDTH - 1 - col)) != 0 {
                     self.put_pixel(x + col, py, color);
@@ -505,7 +548,14 @@ impl FramebufferWriter {
         true
     }
 
-    fn draw_text_scaled(&mut self, x: usize, y: usize, text: &str, color_rgb: u32, scale: usize) -> usize {
+    fn draw_text_scaled(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &str,
+        color_rgb: u32,
+        scale: usize,
+    ) -> usize {
         let color = self.color_from_rgb24(color_rgb);
         let char_step = (GLYPH_WIDTH + H_SPACING) * scale;
         let glyph_w = GLYPH_WIDTH * scale;
@@ -520,8 +570,10 @@ impl FramebufferWriter {
             }
             // Skip character entirely if outside scissor.
             if self.sc_active
-                && (cx + glyph_w <= self.sc_x0 || cx >= self.sc_x1
-                    || y + glyph_h <= self.sc_y0 || y >= self.sc_y1)
+                && (cx + glyph_w <= self.sc_x0
+                    || cx >= self.sc_x1
+                    || y + glyph_h <= self.sc_y0
+                    || y >= self.sc_y1)
             {
                 cx += char_step;
                 continue;
@@ -580,84 +632,232 @@ fn encode_channel(value: u8, size: u8, shift: u8) -> u32 {
 
 fn glyph_for(ch: char) -> [u8; GLYPH_HEIGHT] {
     match ch.to_ascii_lowercase() {
-        'a' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'b' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-        'c' => [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
-        'd' => [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
-        'e' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-        'f' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
-        'g' => [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
-        'h' => [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'i' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
-        'j' => [0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b10001, 0b01110],
-        'k' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-        'l' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-        'm' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-        'n' => [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-        'o' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'p' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-        'q' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
-        'r' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        's' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-        't' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        'u' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'v' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-        'w' => [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010],
-        'x' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-        'y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-        'z' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
-        '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
-        '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        '2' => [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
-        '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-        '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-        '5' => [0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110],
-        '6' => [0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-        '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-        '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-        '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110],
-        ':' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000],
-        ';' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b01000],
-        '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
-        '_' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111],
-        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100],
-        ',' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b01000],
-        '!' => [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100],
-        '?' => [0b01110, 0b10001, 0b00010, 0b00100, 0b00100, 0b00000, 0b00100],
-        '\'' => [0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000],
-        '"' => [0b01010, 0b01010, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
-        '(' => [0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010],
-        ')' => [0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000],
-        '[' => [0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110],
-        ']' => [0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110],
-        '/' => [0b00001, 0b00010, 0b00010, 0b00100, 0b01000, 0b01000, 0b10000],
-        '\\' => [0b10000, 0b01000, 0b01000, 0b00100, 0b00010, 0b00010, 0b00001],
-        '=' => [0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000],
-        '+' => [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
-        '*' => [0b00000, 0b10101, 0b01110, 0b00100, 0b01110, 0b10101, 0b00000],
-        '<' => [0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010],
-        '>' => [0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000],
-        '#' => [0b01010, 0b11111, 0b01010, 0b01010, 0b11111, 0b01010, 0b00000],
-        '$' => [0b00100, 0b01111, 0b10100, 0b01110, 0b00101, 0b11110, 0b00100],
-        '%' => [0b11001, 0b11010, 0b00010, 0b00100, 0b01000, 0b01011, 0b10011],
-        '&' => [0b01100, 0b10010, 0b01100, 0b01000, 0b10101, 0b10010, 0b01101],
-        '@' => [0b01110, 0b10001, 0b10111, 0b10101, 0b10110, 0b10000, 0b01110],
-        '^' => [0b00100, 0b01010, 0b10001, 0b00000, 0b00000, 0b00000, 0b00000],
-        '~' => [0b00000, 0b00000, 0b01000, 0b10101, 0b00010, 0b00000, 0b00000],
-        '`' => [0b01000, 0b00100, 0b00010, 0b00000, 0b00000, 0b00000, 0b00000],
-        '{' => [0b00110, 0b00100, 0b00100, 0b01000, 0b00100, 0b00100, 0b00110],
-        '}' => [0b01100, 0b00100, 0b00100, 0b00010, 0b00100, 0b00100, 0b01100],
-        '|' => [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        ' ' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+        'a' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'b' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'c' => [
+            0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
+        ],
+        'd' => [
+            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
+        'e' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'f' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'g' => [
+            0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110,
+        ],
+        'h' => [
+            0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'i' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111,
+        ],
+        'j' => [
+            0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b10001, 0b01110,
+        ],
+        'k' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+        ],
+        'l' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'm' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'n' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+        ],
+        'o' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'p' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'q' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101,
+        ],
+        'r' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        's' => [
+            0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        't' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'u' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'v' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
+        'w' => [
+            0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010,
+        ],
+        'x' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+        ],
+        'y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'z' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
+        ],
+        '0' => [
+            0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
+        ],
+        '1' => [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        '2' => [
+            0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111,
+        ],
+        '3' => [
+            0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        '4' => [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        '5' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110,
+        ],
+        '6' => [
+            0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        '7' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        '8' => [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        '9' => [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+        ],
+        ':' => [
+            0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000,
+        ],
+        ';' => [
+            0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b01000,
+        ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
+        '_' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111,
+        ],
+        '.' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100,
+        ],
+        ',' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b01000,
+        ],
+        '!' => [
+            0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100,
+        ],
+        '?' => [
+            0b01110, 0b10001, 0b00010, 0b00100, 0b00100, 0b00000, 0b00100,
+        ],
+        '\'' => [
+            0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        '"' => [
+            0b01010, 0b01010, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        '(' => [
+            0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010,
+        ],
+        ')' => [
+            0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000,
+        ],
+        '[' => [
+            0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110,
+        ],
+        ']' => [
+            0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110,
+        ],
+        '/' => [
+            0b00001, 0b00010, 0b00010, 0b00100, 0b01000, 0b01000, 0b10000,
+        ],
+        '\\' => [
+            0b10000, 0b01000, 0b01000, 0b00100, 0b00010, 0b00010, 0b00001,
+        ],
+        '=' => [
+            0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000,
+        ],
+        '+' => [
+            0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
+        ],
+        '*' => [
+            0b00000, 0b10101, 0b01110, 0b00100, 0b01110, 0b10101, 0b00000,
+        ],
+        '<' => [
+            0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010,
+        ],
+        '>' => [
+            0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000,
+        ],
+        '#' => [
+            0b01010, 0b11111, 0b01010, 0b01010, 0b11111, 0b01010, 0b00000,
+        ],
+        '$' => [
+            0b00100, 0b01111, 0b10100, 0b01110, 0b00101, 0b11110, 0b00100,
+        ],
+        '%' => [
+            0b11001, 0b11010, 0b00010, 0b00100, 0b01000, 0b01011, 0b10011,
+        ],
+        '&' => [
+            0b01100, 0b10010, 0b01100, 0b01000, 0b10101, 0b10010, 0b01101,
+        ],
+        '@' => [
+            0b01110, 0b10001, 0b10111, 0b10101, 0b10110, 0b10000, 0b01110,
+        ],
+        '^' => [
+            0b00100, 0b01010, 0b10001, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        '~' => [
+            0b00000, 0b00000, 0b01000, 0b10101, 0b00010, 0b00000, 0b00000,
+        ],
+        '`' => [
+            0b01000, 0b00100, 0b00010, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        '{' => [
+            0b00110, 0b00100, 0b00100, 0b01000, 0b00100, 0b00100, 0b00110,
+        ],
+        '}' => [
+            0b01100, 0b00100, 0b00100, 0b00010, 0b00100, 0b00100, 0b01100,
+        ],
+        '|' => [
+            0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        ' ' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
         // ── Math / special Unicode symbols used in built-in apps ──────────
         // ÷ (U+00F7) division sign: dot · line · dot
-        '÷' => [0b00100, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000, 0b00100],
+        '÷' => [
+            0b00100, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000, 0b00100,
+        ],
         // × (U+00D7) multiplication sign: diagonal cross
-        '×' => [0b00000, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b00000],
+        '×' => [
+            0b00000, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b00000,
+        ],
         // − (U+2212) minus sign: same shape as ASCII hyphen
-        '−' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+        '−' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
         // ← (U+2190) left arrow: arrowhead + horizontal stem
-        '←' => [0b00100, 0b01000, 0b11111, 0b01000, 0b00100, 0b00000, 0b00000],
-        _ => [0b11111, 0b00001, 0b00010, 0b00100, 0b00100, 0b00000, 0b00100],
+        '←' => [
+            0b00100, 0b01000, 0b11111, 0b01000, 0b00100, 0b00000, 0b00000,
+        ],
+        _ => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b00100, 0b00000, 0b00100,
+        ],
     }
 }

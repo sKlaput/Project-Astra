@@ -11,8 +11,8 @@
 // Response parsing: skip header, re-skip question, read first A-record answer.
 // ---------------------------------------------------------------------------
 
-use crate::net::{config, arp, udp};
 use crate::arch::x86_64::interrupts::uptime_ms;
+use crate::net::{arp, config, udp};
 
 const DNS_PORT: u16 = 53;
 const DNS_SERVER: [u8; 4] = [10, 0, 2, 3]; // QEMU slirp DNS
@@ -28,36 +28,54 @@ fn encode_name(name: &str, out: &mut [u8]) -> usize {
     let mut pos = 0usize;
     for label in name.split('.') {
         let lb = label.as_bytes();
-        if lb.is_empty() || lb.len() > 63 { return 0; }
-        if pos + 1 + lb.len() >= out.len() { return 0; }
+        if lb.is_empty() || lb.len() > 63 {
+            return 0;
+        }
+        if pos + 1 + lb.len() >= out.len() {
+            return 0;
+        }
         out[pos] = lb.len() as u8;
         pos += 1;
         out[pos..pos + lb.len()].copy_from_slice(lb);
         pos += lb.len();
     }
-    if pos >= out.len() { return 0; }
-    out[pos] = 0;  // root label
+    if pos >= out.len() {
+        return 0;
+    }
+    out[pos] = 0; // root label
     pos + 1
 }
 
 fn build_query(name: &str, txid: u16, buf: &mut [u8; MAX_DNS_PAYLOAD]) -> usize {
     // Header
-    buf[0] = (txid >> 8) as u8;   buf[1] = (txid & 0xFF) as u8;
-    buf[2] = 0x01;                  buf[3] = 0x00; // flags: RD
-    buf[4] = 0x00;                  buf[5] = 0x01; // qdcount = 1
-    buf[6] = 0x00;                  buf[7] = 0x00; // ancount = 0
-    buf[8] = 0x00;                  buf[9] = 0x00; // nscount = 0
-    buf[10] = 0x00;                 buf[11] = 0x00; // arcount = 0
+    buf[0] = (txid >> 8) as u8;
+    buf[1] = (txid & 0xFF) as u8;
+    buf[2] = 0x01;
+    buf[3] = 0x00; // flags: RD
+    buf[4] = 0x00;
+    buf[5] = 0x01; // qdcount = 1
+    buf[6] = 0x00;
+    buf[7] = 0x00; // ancount = 0
+    buf[8] = 0x00;
+    buf[9] = 0x00; // nscount = 0
+    buf[10] = 0x00;
+    buf[11] = 0x00; // arcount = 0
 
     let mut pos = 12usize;
     let nlen = encode_name(name, &mut buf[pos..]);
-    if nlen == 0 { return 0; }
+    if nlen == 0 {
+        return 0;
+    }
     pos += nlen;
 
     // Type A (0x0001) and Class IN (0x0001)
-    if pos + 4 > MAX_DNS_PAYLOAD { return 0; }
-    buf[pos] = 0x00; buf[pos+1] = 0x01;  // QTYPE = A
-    buf[pos+2] = 0x00; buf[pos+3] = 0x01; // QCLASS = IN
+    if pos + 4 > MAX_DNS_PAYLOAD {
+        return 0;
+    }
+    buf[pos] = 0x00;
+    buf[pos + 1] = 0x01; // QTYPE = A
+    buf[pos + 2] = 0x00;
+    buf[pos + 3] = 0x01; // QCLASS = IN
     pos + 4
 }
 
@@ -66,9 +84,13 @@ fn build_query(name: &str, txid: u16, buf: &mut [u8; MAX_DNS_PAYLOAD]) -> usize 
 /// Skip a DNS name at `data[off..]`. Returns new offset past the name.
 fn skip_name(data: &[u8], mut off: usize) -> Option<usize> {
     loop {
-        if off >= data.len() { return None; }
+        if off >= data.len() {
+            return None;
+        }
         let len = data[off] as usize;
-        if len == 0 { return Some(off + 1); }
+        if len == 0 {
+            return Some(off + 1);
+        }
         if len & 0xC0 == 0xC0 {
             // Pointer (2 bytes)
             return Some(off + 2);
@@ -79,13 +101,21 @@ fn skip_name(data: &[u8], mut off: usize) -> Option<usize> {
 
 /// Parse a DNS A-record response.  Returns the first IPv4 address or a DnsError.
 fn parse_response(data: &[u8], txid: u16) -> Result<[u8; 4], DnsError> {
-    if data.len() < 12 { return Err(DnsError::Timeout); }
+    if data.len() < 12 {
+        return Err(DnsError::Timeout);
+    }
     let resp_txid = u16::from_be_bytes([data[0], data[1]]);
-    if resp_txid != txid { return Err(DnsError::Timeout); }
+    if resp_txid != txid {
+        return Err(DnsError::Timeout);
+    }
     let flags = u16::from_be_bytes([data[2], data[3]]);
-    if flags & 0x8000 == 0 { return Err(DnsError::Timeout); } // not a response
+    if flags & 0x8000 == 0 {
+        return Err(DnsError::Timeout);
+    } // not a response
     let rcode = (flags & 0x000F) as u8;
-    if rcode != 0 { return Err(DnsError::RcodeError(rcode)); }
+    if rcode != 0 {
+        return Err(DnsError::RcodeError(rcode));
+    }
 
     let qdcount = u16::from_be_bytes([data[4], data[5]]) as usize;
     let ancount = u16::from_be_bytes([data[6], data[7]]) as usize;
@@ -95,18 +125,26 @@ fn parse_response(data: &[u8], txid: u16) -> Result<[u8; 4], DnsError> {
     for _ in 0..qdcount {
         off = skip_name(data, off).ok_or(DnsError::Timeout)?;
         off += 4; // type + class
-        if off > data.len() { return Err(DnsError::Timeout); }
+        if off > data.len() {
+            return Err(DnsError::Timeout);
+        }
     }
     // Parse answers looking for A records
     for _ in 0..ancount {
         off = skip_name(data, off).ok_or(DnsError::Timeout)?;
-        if off + 10 > data.len() { return Err(DnsError::Timeout); }
-        let rtype  = u16::from_be_bytes([data[off], data[off+1]]);
-        let rdlen  = u16::from_be_bytes([data[off+8], data[off+9]]) as usize;
+        if off + 10 > data.len() {
+            return Err(DnsError::Timeout);
+        }
+        let rtype = u16::from_be_bytes([data[off], data[off + 1]]);
+        let rdlen = u16::from_be_bytes([data[off + 8], data[off + 9]]) as usize;
         off += 10;
-        if off + rdlen > data.len() { return Err(DnsError::Timeout); }
+        if off + rdlen > data.len() {
+            return Err(DnsError::Timeout);
+        }
         if rtype == 1 && rdlen == 4 {
-            let ip: [u8; 4] = data[off..off+4].try_into().map_err(|_| DnsError::Timeout)?;
+            let ip: [u8; 4] = data[off..off + 4]
+                .try_into()
+                .map_err(|_| DnsError::Timeout)?;
             return Ok(ip);
         }
         off += rdlen;
@@ -160,7 +198,9 @@ pub fn resolve(name: &str, timeout_ms: u64) -> Result<[u8; 4], DnsError> {
 
         let mut buf = [0u8; MAX_DNS_PAYLOAD];
         let qlen = build_query(name, txid, &mut buf);
-        if qlen == 0 { return Err(DnsError::NotReady); }
+        if qlen == 0 {
+            return Err(DnsError::NotReady);
+        }
 
         // Submit query; refresh ARP once if the send fails.
         if !udp::send(DNS_SERVER, dns_mac, src_port, DNS_PORT, &buf[..qlen]) {

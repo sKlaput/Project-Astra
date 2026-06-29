@@ -20,72 +20,76 @@ extern crate alloc;
 
 use crate::app::{App, AppAction};
 use crate::framebuffer;
-use crate::input::Key;
 use crate::fs;
+use crate::input::Key;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const BG:          u32 = 0x08100A;
-const HEADER_BG:   u32 = 0x0C1A0E;
-const HEADER_COL:  u32 = 0xA8D8B0;
-const BORDER_COL:  u32 = 0x1A3020;
-const TEXT_COL:    u32 = 0xC8E8D0;
-const CURSOR_COL:  u32 = 0x40E860;
-const LINE_NUM:    u32 = 0x2A4830;
-const STATUS_BG:   u32 = 0x0C1A0E;
-const STATUS_COL:  u32 = 0x3A6040;
-const STATUS_VAL:  u32 = 0x60A070;
-const DIRTY_COL:   u32 = 0xE3B341;
-const SAVED_COL:   u32 = 0x40E860;
+const BG: u32 = 0x08100A;
+const HEADER_BG: u32 = 0x0C1A0E;
+const HEADER_COL: u32 = 0xA8D8B0;
+const BORDER_COL: u32 = 0x1A3020;
+const TEXT_COL: u32 = 0xC8E8D0;
+const CURSOR_COL: u32 = 0x40E860;
+const LINE_NUM: u32 = 0x2A4830;
+const STATUS_BG: u32 = 0x0C1A0E;
+const STATUS_COL: u32 = 0x3A6040;
+const STATUS_VAL: u32 = 0x60A070;
+const DIRTY_COL: u32 = 0xE3B341;
+const SAVED_COL: u32 = 0x40E860;
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-const HEADER_H:  usize = 22;
-const STATUS_H:  usize = 16;
-const LNUM_W:    usize = 28;
-const PAD_X:     usize = 8;
-const ROW_H:     usize = 13;
-const CHAR_W:    usize = 6;
+const HEADER_H: usize = 22;
+const STATUS_H: usize = 16;
+const LNUM_W: usize = 28;
+const PAD_X: usize = 8;
+const ROW_H: usize = 13;
+const CHAR_W: usize = 6;
 
 // ── Limits ────────────────────────────────────────────────────────────────────
 
-const BUF_CAP:   usize = 16 * 1024;   // 16 KiB
+const BUF_CAP: usize = 16 * 1024; // 16 KiB
 const MAX_LINES: usize = 1024;
 
 /// Fallback dynamic VFS path used if FAT32 is not available.
-const NOTES_DYN:  &str = "/notes.txt";
+const NOTES_DYN: &str = "/notes.txt";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-enum SaveState { Clean, Dirty, JustSaved }
+enum SaveState {
+    Clean,
+    Dirty,
+    JustSaved,
+}
 
 // ── NotesApp ──────────────────────────────────────────────────────────────────
 
 pub struct NotesApp {
-    buf:          [u8; BUF_CAP],
-    buf_len:      usize,
-    cursor:       usize,          // byte offset
-    scroll:       usize,          // first visible line index
-    lines:        [usize; MAX_LINES],  // byte offsets of line starts
-    line_count:   usize,
-    save_state:   SaveState,
-    flash_ticks:  u8,             // countdown for "Saved" flash
-    fat32_id:     Option<u16>,    // FAT32 node id once discovered
+    buf: [u8; BUF_CAP],
+    buf_len: usize,
+    cursor: usize,             // byte offset
+    scroll: usize,             // first visible line index
+    lines: [usize; MAX_LINES], // byte offsets of line starts
+    line_count: usize,
+    save_state: SaveState,
+    flash_ticks: u8,       // countdown for "Saved" flash
+    fat32_id: Option<u16>, // FAT32 node id once discovered
 }
 
 impl NotesApp {
     pub fn new() -> Self {
         let mut app = NotesApp {
-            buf:         [0u8; BUF_CAP],
-            buf_len:     0,
-            cursor:      0,
-            scroll:      0,
-            lines:       [0usize; MAX_LINES],
-            line_count:  1,
-            save_state:  SaveState::Clean,
+            buf: [0u8; BUF_CAP],
+            buf_len: 0,
+            cursor: 0,
+            scroll: 0,
+            lines: [0usize; MAX_LINES],
+            line_count: 1,
+            save_state: SaveState::Clean,
             flash_ticks: 0,
-            fat32_id:    None,
+            fat32_id: None,
         };
         app.lines[0] = 0;
         app.try_load();
@@ -139,7 +143,9 @@ impl NotesApp {
     // ── Text editing ──────────────────────────────────────────────────────────
 
     fn insert_byte(&mut self, b: u8) {
-        if self.buf_len >= BUF_CAP { return; }
+        if self.buf_len >= BUF_CAP {
+            return;
+        }
         // Shift bytes right from cursor
         let pos = self.cursor;
         for i in (pos..self.buf_len).rev() {
@@ -153,7 +159,9 @@ impl NotesApp {
     }
 
     fn delete_back(&mut self) {
-        if self.cursor == 0 { return; }
+        if self.cursor == 0 {
+            return;
+        }
         let pos = self.cursor - 1;
         for i in pos..self.buf_len - 1 {
             self.buf[i] = self.buf[i + 1];
@@ -165,7 +173,9 @@ impl NotesApp {
     }
 
     fn delete_fwd(&mut self) {
-        if self.cursor >= self.buf_len { return; }
+        if self.cursor >= self.buf_len {
+            return;
+        }
         let pos = self.cursor;
         for i in pos..self.buf_len - 1 {
             self.buf[i] = self.buf[i + 1];
@@ -213,30 +223,48 @@ impl NotesApp {
 
     fn move_up(&mut self) {
         let line = self.cursor_line();
-        if line == 0 { self.cursor = 0; return; }
+        if line == 0 {
+            self.cursor = 0;
+            return;
+        }
         let col = self.cursor_col();
         let prev_start = self.lines[line - 1];
-        let prev_end = if line - 1 + 1 < self.line_count { self.lines[line] - 1 } else { self.buf_len };
+        let prev_end = if line - 1 + 1 < self.line_count {
+            self.lines[line] - 1
+        } else {
+            self.buf_len
+        };
         let prev_len = prev_end - prev_start;
         self.cursor = prev_start + col.min(prev_len);
     }
 
     fn move_down(&mut self) {
         let line = self.cursor_line();
-        if line + 1 >= self.line_count { self.cursor = self.buf_len; return; }
+        if line + 1 >= self.line_count {
+            self.cursor = self.buf_len;
+            return;
+        }
         let col = self.cursor_col();
         let next_start = self.lines[line + 1];
-        let next_end = if line + 2 < self.line_count { self.lines[line + 2] - 1 } else { self.buf_len };
+        let next_end = if line + 2 < self.line_count {
+            self.lines[line + 2] - 1
+        } else {
+            self.buf_len
+        };
         let next_len = next_end - next_start;
         self.cursor = next_start + col.min(next_len);
     }
 
     fn move_left(&mut self) {
-        if self.cursor > 0 { self.cursor -= 1; }
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
     }
 
     fn move_right(&mut self) {
-        if self.cursor < self.buf_len { self.cursor += 1; }
+        if self.cursor < self.buf_len {
+            self.cursor += 1;
+        }
     }
 
     fn ensure_cursor_visible(&mut self, visible_rows: usize) {
@@ -256,25 +284,35 @@ impl NotesApp {
 // ── App trait ─────────────────────────────────────────────────────────────────
 
 impl App for NotesApp {
-    fn title(&self) -> &str { "Notes" }
-    fn app_id(&self) -> &'static str { "notes" }
-    fn preferred_size(&self) -> (usize, usize) { (600, 440) }
-    fn allow_multiple_instances(&self) -> bool { false }
-    fn refresh_interval_ms(&self) -> Option<u64> { None }
+    fn title(&self) -> &str {
+        "Notes"
+    }
+    fn app_id(&self) -> &'static str {
+        "notes"
+    }
+    fn preferred_size(&self) -> (usize, usize) {
+        (600, 440)
+    }
+    fn allow_multiple_instances(&self) -> bool {
+        false
+    }
+    fn refresh_interval_ms(&self) -> Option<u64> {
+        None
+    }
 
     fn render(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
         // Header
         framebuffer::fill_rect(cx, cy, cw, HEADER_H, HEADER_BG);
         framebuffer::fill_rect(cx, cy + HEADER_H - 1, cw, 1, BORDER_COL);
         let title = match self.save_state {
-            SaveState::Dirty     => "Notes  [modified]",
+            SaveState::Dirty => "Notes  [modified]",
             SaveState::JustSaved => "Notes  [saved]",
-            SaveState::Clean     => "Notes",
+            SaveState::Clean => "Notes",
         };
         let title_col = match self.save_state {
-            SaveState::Dirty     => DIRTY_COL,
+            SaveState::Dirty => DIRTY_COL,
             SaveState::JustSaved => SAVED_COL,
-            SaveState::Clean     => HEADER_COL,
+            SaveState::Clean => HEADER_COL,
         };
         framebuffer::draw_text_at(cx + PAD_X, cy + (HEADER_H - 8) / 2, title, title_col);
         // Help hint in header
@@ -296,7 +334,9 @@ impl App for NotesApp {
 
         for row in 0..visible {
             let line_idx = self.scroll + row;
-            if line_idx >= self.line_count { break; }
+            if line_idx >= self.line_count {
+                break;
+            }
 
             let ry = text_y + row * ROW_H;
 
@@ -304,7 +344,11 @@ impl App for NotesApp {
             let mut lbuf = [0u8; 8];
             let llen = fmt_usize(&mut lbuf, line_idx + 1);
             let lstr = core::str::from_utf8(&lbuf[..llen]).unwrap_or("");
-            let lnum_col = if line_idx == cur_line { HEADER_COL } else { LINE_NUM };
+            let lnum_col = if line_idx == cur_line {
+                HEADER_COL
+            } else {
+                LINE_NUM
+            };
             framebuffer::draw_text_at(cx + 2, ry + 2, lstr, lnum_col);
 
             // Line text
@@ -352,11 +396,13 @@ impl App for NotesApp {
         let cur_before = self.cursor;
 
         match key {
-            Key::Char(b'\x13') => {  // Ctrl+S
+            Key::Char(b'\x13') => {
+                // Ctrl+S
                 self.save();
                 return AppAction::RedrawAll;
             }
-            Key::Char(b'\x0C') => {  // Ctrl+L
+            Key::Char(b'\x0C') => {
+                // Ctrl+L
                 self.clear_all();
                 self.scroll = 0;
                 return AppAction::RedrawAll;
@@ -364,16 +410,17 @@ impl App for NotesApp {
             Key::Char(b'\x08') | Key::Backspace => {
                 self.delete_back();
             }
-            Key::Char(b'\x04') => {  // Ctrl+D
+            Key::Char(b'\x04') => {
+                // Ctrl+D
                 self.delete_fwd();
             }
             Key::Char(b'\r') | Key::Char(b'\n') | Key::Enter => {
                 self.insert_byte(b'\n');
             }
-            Key::ArrowLeft  => self.move_left(),
+            Key::ArrowLeft => self.move_left(),
             Key::ArrowRight => self.move_right(),
-            Key::ArrowUp    => self.move_up(),
-            Key::ArrowDown  => self.move_down(),
+            Key::ArrowUp => self.move_up(),
+            Key::ArrowDown => self.move_down(),
             Key::Char(b) if b >= 0x20 => {
                 self.insert_byte(b);
             }
@@ -404,29 +451,54 @@ impl App for NotesApp {
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
 fn fmt_usize(buf: &mut [u8; 8], mut n: usize) -> usize {
-    if n == 0 { buf[0] = b'0'; return 1; }
+    if n == 0 {
+        buf[0] = b'0';
+        return 1;
+    }
     let mut tmp = [0u8; 8];
     let mut ti = 0usize;
-    while n > 0 { tmp[ti] = b'0' + (n % 10) as u8; ti += 1; n /= 10; }
-    for i in 0..ti { buf[i] = tmp[ti - 1 - i]; }
+    while n > 0 {
+        tmp[ti] = b'0' + (n % 10) as u8;
+        ti += 1;
+        n /= 10;
+    }
+    for i in 0..ti {
+        buf[i] = tmp[ti - 1 - i];
+    }
     ti
 }
 
 fn write_label(buf: &mut [u8; 80], pos: &mut usize, label: &[u8]) {
-    for &b in label { if *pos < buf.len() { buf[*pos] = b; *pos += 1; } }
+    for &b in label {
+        if *pos < buf.len() {
+            buf[*pos] = b;
+            *pos += 1;
+        }
+    }
 }
 
 fn write_usize_s(buf: &mut [u8; 80], pos: &mut usize, mut n: usize) {
     if n == 0 {
-        if *pos < buf.len() { buf[*pos] = b'0'; *pos += 1; }
+        if *pos < buf.len() {
+            buf[*pos] = b'0';
+            *pos += 1;
+        }
         return;
     }
     let start = *pos;
     let mut tmp = [0u8; 20];
     let mut ti = 0usize;
-    while n > 0 { tmp[ti] = b'0' + (n % 10) as u8; ti += 1; n /= 10; }
+    while n > 0 {
+        tmp[ti] = b'0' + (n % 10) as u8;
+        ti += 1;
+        n /= 10;
+    }
     let end = start + ti;
-    if end > buf.len() { return; }
-    for i in 0..ti { buf[start + i] = tmp[ti - 1 - i]; }
+    if end > buf.len() {
+        return;
+    }
+    for i in 0..ti {
+        buf[start + i] = tmp[ti - 1 - i];
+    }
     *pos = end;
 }

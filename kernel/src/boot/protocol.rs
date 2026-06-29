@@ -181,7 +181,11 @@ pub fn hhdm_offset() -> Option<usize> {
 pub fn rsdp_address() -> Option<usize> {
     let response = RSDP_REQUEST.get_response()?;
     let addr = response.address();
-    if addr == 0 { None } else { Some(addr) }
+    if addr == 0 {
+        None
+    } else {
+        Some(addr)
+    }
 }
 
 /// Information about a single CPU exposed by the Limine MP request.

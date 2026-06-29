@@ -1,22 +1,17 @@
 /// User-mode task infrastructure.
-/// 
+///
 /// Provides support for spawning and managing persistent user-mode tasks
 /// that can be scheduled and rescheduled by the kernel scheduler.
-
 use crate::memory::paging::{
-    hhdm_offset,
-    lookup_page_entry_current,
-    map_page_current,
-    PageTableFlags,
-    PAGE_SIZE,
+    hhdm_offset, lookup_page_entry_current, map_page_current, PageTableFlags, PAGE_SIZE,
 };
 
 /// Virtual address constants for persistent user-task pages.
 /// These are placed in user-accessible address space.
-pub const USER_TASK_CODE_VIRT: usize    = 0x0000_4000_0000_0000; // user code page
-pub const USER_TASK_STACK_VIRT: usize   = 0x0000_4000_1000_0000; // user stack page
-pub const USER_FRAMEBUFFER_VIRT: usize  = 0x0000_4000_2000_0000; // user framebuffer window
-pub const USER_TASK_LIMIT: usize        = 32; // max concurrent user tasks
+pub const USER_TASK_CODE_VIRT: usize = 0x0000_4000_0000_0000; // user code page
+pub const USER_TASK_STACK_VIRT: usize = 0x0000_4000_1000_0000; // user stack page
+pub const USER_FRAMEBUFFER_VIRT: usize = 0x0000_4000_2000_0000; // user framebuffer window
+pub const USER_TASK_LIMIT: usize = 32; // max concurrent user tasks
 
 /// Map the boot framebuffer into the current user address space at
 /// USER_FRAMEBUFFER_VIRT, page-aligned, user-accessible, writable.

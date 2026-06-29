@@ -9,8 +9,8 @@
 // ---------------------------------------------------------------------------
 
 use super::{Driver, DriverError};
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 // ---------------------------------------------------------------------------
 // 512-byte backing store
@@ -29,7 +29,10 @@ static BLOCK_LOCKED: AtomicBool = AtomicBool::new(false);
 
 /// Acquire the single-block lock (spin).
 fn lock_block() {
-    while BLOCK_LOCKED.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+    while BLOCK_LOCKED
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
         core::hint::spin_loop();
     }
 }

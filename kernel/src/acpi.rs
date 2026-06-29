@@ -99,11 +99,24 @@ struct MadtTables {
 }
 
 static mut MADT_DATA: MadtTables = MadtTables {
-    local_apics: [LocalApic { acpi_id: 0, apic_id: 0, flags: 0 }; MAX_LOCAL_APICS],
+    local_apics: [LocalApic {
+        acpi_id: 0,
+        apic_id: 0,
+        flags: 0,
+    }; MAX_LOCAL_APICS],
     local_count: 0,
-    io_apics: [IoApic { id: 0, address: 0, gsi_base: 0 }; MAX_IO_APICS],
+    io_apics: [IoApic {
+        id: 0,
+        address: 0,
+        gsi_base: 0,
+    }; MAX_IO_APICS],
     io_count: 0,
-    overrides: [IntSrcOverride { bus: 0, source_irq: 0, gsi: 0, flags: 0 }; MAX_OVERRIDES],
+    overrides: [IntSrcOverride {
+        bus: 0,
+        source_irq: 0,
+        gsi: 0,
+        flags: 0,
+    }; MAX_OVERRIDES],
     override_count: 0,
     local_apic_addr: 0,
     pcat_compat: false,
@@ -124,7 +137,9 @@ pub fn init() -> bool {
     };
 
     let madt_phys = unsafe { locate_madt_phys(rsdp_phys as u64) };
-    let Some(madt_phys) = madt_phys else { return false; };
+    let Some(madt_phys) = madt_phys else {
+        return false;
+    };
 
     unsafe { parse_madt(madt_phys) }
 }
@@ -217,7 +232,11 @@ unsafe fn parse_madt(madt_phys: u64) -> bool {
                 let acpi_id = unsafe { core::ptr::read(p.add(2)) };
                 let apic_id = unsafe { core::ptr::read(p.add(3)) };
                 let f = unsafe { core::ptr::read_unaligned(p.add(4) as *const u32) };
-                data.local_apics[data.local_count] = LocalApic { acpi_id, apic_id, flags: f };
+                data.local_apics[data.local_count] = LocalApic {
+                    acpi_id,
+                    apic_id,
+                    flags: f,
+                };
                 data.local_count += 1;
             }
             MADT_ENTRY_LOCAL_X2APIC if entry_len >= 16 && data.local_count < MAX_LOCAL_APICS => {
@@ -226,22 +245,37 @@ unsafe fn parse_madt(madt_phys: u64) -> bool {
                 let acpi_id = unsafe { core::ptr::read_unaligned(p.add(12) as *const u32) };
                 let acpi_id_u8 = (acpi_id & 0xFF) as u8;
                 let apic_id_u8 = (apic_id & 0xFF) as u8;
-                data.local_apics[data.local_count] = LocalApic { acpi_id: acpi_id_u8, apic_id: apic_id_u8, flags: f };
+                data.local_apics[data.local_count] = LocalApic {
+                    acpi_id: acpi_id_u8,
+                    apic_id: apic_id_u8,
+                    flags: f,
+                };
                 data.local_count += 1;
             }
             MADT_ENTRY_IO_APIC if entry_len >= 12 && data.io_count < MAX_IO_APICS => {
                 let id = unsafe { core::ptr::read(p.add(2)) };
                 let address = unsafe { core::ptr::read_unaligned(p.add(4) as *const u32) };
                 let gsi_base = unsafe { core::ptr::read_unaligned(p.add(8) as *const u32) };
-                data.io_apics[data.io_count] = IoApic { id, address, gsi_base };
+                data.io_apics[data.io_count] = IoApic {
+                    id,
+                    address,
+                    gsi_base,
+                };
                 data.io_count += 1;
             }
-            MADT_ENTRY_INT_SRC_OVERRIDE if entry_len >= 10 && data.override_count < MAX_OVERRIDES => {
+            MADT_ENTRY_INT_SRC_OVERRIDE
+                if entry_len >= 10 && data.override_count < MAX_OVERRIDES =>
+            {
                 let bus = unsafe { core::ptr::read(p.add(2)) };
                 let source_irq = unsafe { core::ptr::read(p.add(3)) };
                 let gsi = unsafe { core::ptr::read_unaligned(p.add(4) as *const u32) };
                 let f = unsafe { core::ptr::read_unaligned(p.add(8) as *const u16) };
-                data.overrides[data.override_count] = IntSrcOverride { bus, source_irq, gsi, flags: f };
+                data.overrides[data.override_count] = IntSrcOverride {
+                    bus,
+                    source_irq,
+                    gsi,
+                    flags: f,
+                };
                 data.override_count += 1;
             }
             MADT_ENTRY_NMI_SOURCE | MADT_ENTRY_LOCAL_APIC_NMI => {

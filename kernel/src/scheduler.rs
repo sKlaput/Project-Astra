@@ -1,5 +1,5 @@
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use alloc::alloc::{alloc, dealloc, Layout};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
 // Cooperative context switch (x86_64, Intel syntax).
@@ -102,7 +102,9 @@ fn user_task_trampoline() {
         let id = match current_task() {
             Some(id) => id,
             None => loop {
-                unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
+                unsafe {
+                    core::arch::asm!("hlt", options(nomem, nostack));
+                }
             },
         };
 
@@ -129,7 +131,13 @@ fn user_task_trampoline() {
 
         crate::arch::x86_64::ring3::clear_saved_resume_rsp();
         unsafe {
-            crate::arch::x86_64::ring3::enter_user_mode(entry_rip, user_rsp, user_cs, user_ss, user_rflags);
+            crate::arch::x86_64::ring3::enter_user_mode(
+                entry_rip,
+                user_rsp,
+                user_cs,
+                user_ss,
+                user_rflags,
+            );
         }
         // Back in kernel context after int3/syscall return path.
         unsafe { crate::memory::paging::switch_cr3(kernel_pml4_phys()) };
@@ -150,8 +158,8 @@ pub struct TaskId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum TaskState {
-    Empty   = 0,
-    Ready   = 1,
+    Empty = 0,
+    Ready = 1,
     Running = 2,
     Sleeping = 3,
 }
@@ -170,76 +178,52 @@ impl TaskState {
 pub const RING_CAP: usize = 8;
 const TABLE_CAP: usize = 16;
 
-pub fn ring_capacity() -> usize { RING_CAP }
+pub fn ring_capacity() -> usize {
+    RING_CAP
+}
 
 // Parallel metadata table: slot = task_id % TABLE_CAP.
 // Also stores the owning task_id so stale entries can be detected.
-static TASK_TABLE_ID:    [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
-static TASK_TABLE_STATE: [AtomicU8; TABLE_CAP] = [
-    const { AtomicU8::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_ID: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
+static TASK_TABLE_STATE: [AtomicU8; TABLE_CAP] = [const { AtomicU8::new(0) }; TABLE_CAP];
 // 0 = no current task.
 static CURRENT_TASK: AtomicU64 = AtomicU64::new(0);
 
 // Function pointer table: stores fn() as u64; 0 means no entry point registered.
-static TASK_TABLE_FN: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_FN: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Wake-tick table for sleeping tasks. 0 means "not sleeping".
-static TASK_TABLE_WAKE_TICK: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_WAKE_TICK: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Tick when the task was most recently enqueued into the ready ring.
-static TASK_TABLE_ENQUEUE_TICK: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_ENQUEUE_TICK: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Task priorities: lower value = higher urgency.  Range 0-255; default = 128.
-static TASK_TABLE_PRIORITY: [AtomicU8; TABLE_CAP] = [
-    const { AtomicU8::new(128) }; TABLE_CAP
-];
+static TASK_TABLE_PRIORITY: [AtomicU8; TABLE_CAP] = [const { AtomicU8::new(128) }; TABLE_CAP];
 // Remaining time-slice ticks for the running task.  Reset on every dispatch.
 const DEFAULT_SLICE: u8 = 5;
 static SLICE_CLASS_HIGH: AtomicU8 = AtomicU8::new(DEFAULT_SLICE);
 static SLICE_CLASS_NORMAL: AtomicU8 = AtomicU8::new(DEFAULT_SLICE);
 static SLICE_CLASS_LOW: AtomicU8 = AtomicU8::new(DEFAULT_SLICE);
-static TASK_TABLE_SLICE: [AtomicU8; TABLE_CAP] = [
-    const { AtomicU8::new(DEFAULT_SLICE) }; TABLE_CAP
-];
+static TASK_TABLE_SLICE: [AtomicU8; TABLE_CAP] =
+    [const { AtomicU8::new(DEFAULT_SLICE) }; TABLE_CAP];
 // Set by timer_irq_inner when a task is force-preempted; cleared by dispatch_once.
-static TASK_TABLE_PREEMPTED: [AtomicBool; TABLE_CAP] = [
-    const { AtomicBool::new(false) }; TABLE_CAP
-];
+static TASK_TABLE_PREEMPTED: [AtomicBool; TABLE_CAP] =
+    [const { AtomicBool::new(false) }; TABLE_CAP];
 // Aging controls for anti-starvation in ready-queue selection.
 static AGING_ENABLED: AtomicBool = AtomicBool::new(true);
 static AGING_TICKS_PER_LEVEL: AtomicU64 = AtomicU64::new(2);
 // Saved RSP for each task slot. Set up on spawn; updated on each context switch.
-static TASK_TABLE_CONTEXT: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_CONTEXT: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Stack base pointer for each task context. 0 means no allocated stack.
-static TASK_TABLE_STACK_BASE: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_STACK_BASE: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Task name: stored as a raw ptr+len pair so we can reconstruct a &'static str.
 // A zero pointer means "unnamed".
-static TASK_TABLE_NAME_PTR: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
-static TASK_TABLE_NAME_LEN: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_NAME_PTR: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
+static TASK_TABLE_NAME_LEN: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Pending signals: 64 bits per task (bits 0-63 = event flags).
 // Tasks can set/check signals without blocking.
-static TASK_TABLE_SIGNALS: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_SIGNALS: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Signal mask: 1 bit blocks delivery for the corresponding signal bit.
 // A blocked signal still stays pending, but wait APIs ignore it until unmasked.
-static TASK_TABLE_SIGNAL_MASK: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_SIGNAL_MASK: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 // Scheduler (dispatcher) saved RSP — written by dispatch_once before entering a task.
 static SCHEDULER_CONTEXT_RSP: AtomicU64 = AtomicU64::new(0);
 // True while a task is currently executing under dispatch_once.
@@ -247,21 +231,12 @@ static IN_TASK_DISPATCH: AtomicBool = AtomicBool::new(false);
 
 // User-mode task metadata: stores per-task user-space code/stack mapping info.
 // 0 means not a user task.
-static TASK_TABLE_USER_CODE_VIRT: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
-static TASK_TABLE_USER_STACK_VIRT: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
-static TASK_TABLE_USER_ENTRY_RIP: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
-static TASK_TABLE_USER_RSP: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
-static TASK_TABLE_USER_PML4: [AtomicU64; TABLE_CAP] = [
-    const { AtomicU64::new(0) }; TABLE_CAP
-];
+static TASK_TABLE_USER_CODE_VIRT: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
+static TASK_TABLE_USER_STACK_VIRT: [AtomicU64; TABLE_CAP] =
+    [const { AtomicU64::new(0) }; TABLE_CAP];
+static TASK_TABLE_USER_ENTRY_RIP: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
+static TASK_TABLE_USER_RSP: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
+static TASK_TABLE_USER_PML4: [AtomicU64; TABLE_CAP] = [const { AtomicU64::new(0) }; TABLE_CAP];
 
 // Kernel CR3 root captured once and reused when returning from user execution.
 static KERNEL_PML4_PHYS: AtomicU64 = AtomicU64::new(0);
@@ -269,7 +244,9 @@ static KERNEL_PML4_PHYS: AtomicU64 = AtomicU64::new(0);
 /// Size of each task stack in bytes.  Must be a multiple of 16.
 const TASK_STACK_SIZE: usize = 8192;
 
-fn table_slot(id: TaskId) -> usize { (id.0 as usize) % TABLE_CAP }
+fn table_slot(id: TaskId) -> usize {
+    (id.0 as usize) % TABLE_CAP
+}
 
 fn kernel_pml4_phys() -> usize {
     let cached = KERNEL_PML4_PHYS.load(Ordering::Acquire);
@@ -288,7 +265,11 @@ fn set_task_state(id: TaskId, state: TaskState) {
 }
 
 fn nonzero_slice(v: u8) -> u8 {
-    if v == 0 { 1 } else { v }
+    if v == 0 {
+        1
+    } else {
+        v
+    }
 }
 
 fn slice_for_priority(priority: u8) -> u8 {
@@ -334,20 +315,24 @@ fn clear_task_state(id: TaskId) {
     let slot = table_slot(id);
     // Only wipe the slot if it still belongs to this task.
     let _ = TASK_TABLE_STATE[slot].compare_exchange(
-        TaskState::Ready as u8, TaskState::Empty as u8,
-        Ordering::Release, Ordering::Relaxed,
+        TaskState::Ready as u8,
+        TaskState::Empty as u8,
+        Ordering::Release,
+        Ordering::Relaxed,
     );
     let _ = TASK_TABLE_STATE[slot].compare_exchange(
-        TaskState::Running as u8, TaskState::Empty as u8,
-        Ordering::Release, Ordering::Relaxed,
+        TaskState::Running as u8,
+        TaskState::Empty as u8,
+        Ordering::Release,
+        Ordering::Relaxed,
     );
     let _ = TASK_TABLE_STATE[slot].compare_exchange(
-        TaskState::Sleeping as u8, TaskState::Empty as u8,
-        Ordering::Release, Ordering::Relaxed,
+        TaskState::Sleeping as u8,
+        TaskState::Empty as u8,
+        Ordering::Release,
+        Ordering::Relaxed,
     );
-    let _ = TASK_TABLE_ID[slot].compare_exchange(
-        id.0, 0, Ordering::Relaxed, Ordering::Relaxed,
-    );
+    let _ = TASK_TABLE_ID[slot].compare_exchange(id.0, 0, Ordering::Relaxed, Ordering::Relaxed);
     TASK_TABLE_FN[slot].store(0, Ordering::Relaxed);
     TASK_TABLE_WAKE_TICK[slot].store(0, Ordering::Relaxed);
     TASK_TABLE_ENQUEUE_TICK[slot].store(0, Ordering::Relaxed);
@@ -362,7 +347,9 @@ fn clear_task_state(id: TaskId) {
     let stack_base = TASK_TABLE_STACK_BASE[slot].swap(0, Ordering::Relaxed);
     if stack_base != 0 {
         let layout = Layout::from_size_align(TASK_STACK_SIZE, 16).expect("task stack layout");
-        unsafe { dealloc(stack_base as *mut u8, layout); }
+        unsafe {
+            dealloc(stack_base as *mut u8, layout);
+        }
     }
     // Clear user-task metadata
     TASK_TABLE_USER_CODE_VIRT[slot].store(0, Ordering::Relaxed);
@@ -384,7 +371,11 @@ pub fn task_state(id: TaskId) -> TaskState {
 
 pub fn current_task() -> Option<TaskId> {
     let raw = CURRENT_TASK.load(Ordering::Acquire);
-    if raw == 0 { None } else { Some(TaskId(raw)) }
+    if raw == 0 {
+        None
+    } else {
+        Some(TaskId(raw))
+    }
 }
 
 /// Return the name label stored for `id`, or `""` if the slot is empty/unnamed.
@@ -406,8 +397,14 @@ pub fn task_name(id: TaskId) -> &'static str {
 static RING_HEAD: AtomicUsize = AtomicUsize::new(0);
 static RING_TAIL: AtomicUsize = AtomicUsize::new(0);
 static RING_BUF: [AtomicU64; RING_CAP] = [
-    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-    AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
 ];
 static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
 static SCHED_TICKS: AtomicU64 = AtomicU64::new(0);
@@ -482,7 +479,8 @@ fn enqueue_task_inner(id: TaskId) -> bool {
     }
 
     RING_BUF[tail % RING_CAP].store(id.0, Ordering::Relaxed);
-    TASK_TABLE_ENQUEUE_TICK[table_slot(id)].store(SCHED_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
+    TASK_TABLE_ENQUEUE_TICK[table_slot(id)]
+        .store(SCHED_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
     RING_TAIL.store(tail.wrapping_add(1), Ordering::Release);
     IDLE_DECISION_SEEN.store(false, Ordering::Relaxed);
     true
@@ -573,7 +571,9 @@ extern "C" fn task_exit_trampoline() -> ! {
     }
     // Should never reach here; exit_task context-switches away.
     loop {
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
     }
 }
 
@@ -586,8 +586,7 @@ extern "C" fn task_exit_trampoline() -> ! {
 /// SAFETY: allocates from the global kernel heap; the returned pointer must
 /// not be freed while the task slot is live (bump allocator — no-op for free).
 fn alloc_task_context(entry: fn()) -> (u64, u64) {
-    let layout = Layout::from_size_align(TASK_STACK_SIZE, 16)
-        .expect("task stack layout");
+    let layout = Layout::from_size_align(TASK_STACK_SIZE, 16).expect("task stack layout");
     let stack_base = unsafe { alloc(layout) };
     assert!(!stack_base.is_null(), "task stack alloc failed");
 
@@ -605,7 +604,7 @@ fn alloc_task_context(entry: fn()) -> (u64, u64) {
     let stack_top = unsafe { (stack_base as *mut u64).add(TASK_STACK_SIZE / 8) };
     unsafe {
         *stack_top.sub(1) = task_exit_trampoline as *const () as usize as u64; // [rsp+56]
-        *stack_top.sub(2) = entry as *const () as usize as u64;                // [rsp+48]
+        *stack_top.sub(2) = entry as *const () as usize as u64; // [rsp+48]
         *stack_top.sub(3) = 0; // rbp
         *stack_top.sub(4) = 0; // rbx
         *stack_top.sub(5) = 0; // r12
@@ -636,7 +635,9 @@ pub fn spawn_task() -> Option<TaskId> {
 /// scheduler and does not return to the caller.
 pub fn exit_task(id: TaskId) {
     STAT_EXIT_COUNT.fetch_add(1, Ordering::Relaxed);
-    CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
+    CURRENT_TASK
+        .compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire)
+        .ok();
     let slot = table_slot(id);
     clear_task_state(id);
 
@@ -650,7 +651,11 @@ pub fn exit_task(id: TaskId) {
             context_switch(TASK_TABLE_CONTEXT[slot].as_ptr(), sched_rsp);
         }
         // Unreachable: empty task is never re-dispatched.
-        loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
+        loop {
+            unsafe {
+                core::arch::asm!("hlt", options(nomem, nostack));
+            }
+        }
     }
 }
 
@@ -671,7 +676,9 @@ pub fn abort_current_user_task_from_fault() -> ! {
 
     if let Some(id) = current_task() {
         STAT_EXIT_COUNT.fetch_add(1, Ordering::Relaxed);
-        CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
+        CURRENT_TASK
+            .compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire)
+            .ok();
         clear_task_state(id);
     }
     // Restore the scheduler cooperative frame.  dispatch_once will clear
@@ -682,7 +689,11 @@ pub fn abort_current_user_task_from_fault() -> ! {
         // restoring it resumes that frame without returning through the ISR.
         unsafe { context_restore_to(sched_rsp) }
     } else {
-        loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack)); } }
+        loop {
+            unsafe {
+                core::arch::asm!("hlt", options(nomem, nostack));
+            }
+        }
     }
 }
 
@@ -765,7 +776,13 @@ pub fn spawn_user_task(
 /// Must be called before the task is dispatched.
 /// Returns `true` if the registration succeeded; `false` if the task is not Ready
 /// or if the slot does not belong to the given task.
-pub fn set_task_user_mode(id: TaskId, code_virt: u64, stack_virt: u64, entry_rip: u64, user_rsp: u64) -> bool {
+pub fn set_task_user_mode(
+    id: TaskId,
+    code_virt: u64,
+    stack_virt: u64,
+    entry_rip: u64,
+    user_rsp: u64,
+) -> bool {
     let slot = table_slot(id);
     // Only update if the slot still belongs to this task and is Ready (not yet dispatched).
     if TASK_TABLE_ID[slot].load(Ordering::Relaxed) != id.0 {
@@ -777,7 +794,10 @@ pub fn set_task_user_mode(id: TaskId, code_virt: u64, stack_virt: u64, entry_rip
     TASK_TABLE_USER_RSP[slot].store(user_rsp, Ordering::Relaxed);
     // Backward-compatible default: user task uses current address space unless
     // explicitly assigned a dedicated CR3 root by process spawning code.
-    TASK_TABLE_USER_PML4[slot].store(crate::memory::paging::current_cr3_phys() as u64, Ordering::Relaxed);
+    TASK_TABLE_USER_PML4[slot].store(
+        crate::memory::paging::current_cr3_phys() as u64,
+        Ordering::Relaxed,
+    );
     true
 }
 
@@ -834,13 +854,19 @@ pub fn take_task_user_pml4(id: TaskId) -> Option<u64> {
         return None;
     }
     let p = TASK_TABLE_USER_PML4[slot].swap(0, Ordering::AcqRel);
-    if p == 0 { None } else { Some(p) }
+    if p == 0 {
+        None
+    } else {
+        Some(p)
+    }
 }
 
 /// Put the currently running task to sleep for `ticks` scheduler ticks.
 /// Returns false when there is no current task context.
 pub fn sleep_current_for_ticks(ticks: u64) -> bool {
-    let wake_at = SCHED_TICKS.load(Ordering::Relaxed).saturating_add(ticks.max(1));
+    let wake_at = SCHED_TICKS
+        .load(Ordering::Relaxed)
+        .saturating_add(ticks.max(1));
     sleep_current_until_tick(wake_at)
 }
 
@@ -861,12 +887,16 @@ pub fn sleep_current_until_tick(deadline_tick: u64) -> bool {
     TASK_TABLE_WAKE_TICK[slot].store(wake_at, Ordering::Release);
     set_task_state(id, TaskState::Sleeping);
     STAT_SLEEP_COUNT.fetch_add(1, Ordering::Relaxed);
-    CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
+    CURRENT_TASK
+        .compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire)
+        .ok();
 
     // Switch to scheduler; this call returns when the task is woken and
     // re-dispatched by dispatch_once.
     let sched_rsp = SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire);
-    unsafe { context_switch(TASK_TABLE_CONTEXT[slot].as_ptr(), sched_rsp); }
+    unsafe {
+        context_switch(TASK_TABLE_CONTEXT[slot].as_ptr(), sched_rsp);
+    }
 
     // Resumed: dispatch_once already set state=Running and CURRENT_TASK.
     true
@@ -879,7 +909,7 @@ pub fn sleep_current_until_tick(deadline_tick: u64) -> bool {
 pub fn dispatch_once() -> bool {
     let task = match dequeue_next() {
         Some(t) => t,
-        None    => return false,
+        None => return false,
     };
 
     let slot = table_slot(task);
@@ -902,16 +932,22 @@ pub fn dispatch_once() -> bool {
         // a cooperative context_switch frame (resumed task), or the full
         // 15-GPR + iret frame saved by the timer ISR (preempted task).
         if was_preempted {
-            unsafe { context_switch_to_preempted(SCHEDULER_CONTEXT_RSP.as_ptr(), task_rsp); }
+            unsafe {
+                context_switch_to_preempted(SCHEDULER_CONTEXT_RSP.as_ptr(), task_rsp);
+            }
         } else {
-            unsafe { context_switch(SCHEDULER_CONTEXT_RSP.as_ptr(), task_rsp); }
+            unsafe {
+                context_switch(SCHEDULER_CONTEXT_RSP.as_ptr(), task_rsp);
+            }
         }
         IN_TASK_DISPATCH.store(false, Ordering::Release);
 
         // Back here after: cooperative sleep/exit, OR preemption via context_restore_to.
         // Safety-net re-queue (should not fire in normal operation).
         if task_state(task) == TaskState::Running {
-            CURRENT_TASK.compare_exchange(task.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
+            CURRENT_TASK
+                .compare_exchange(task.0, 0, Ordering::AcqRel, Ordering::Acquire)
+                .ok();
             set_task_state(task, TaskState::Ready);
             enqueue_task(task);
             STAT_REQUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -983,7 +1019,8 @@ pub fn set_task_priority_any(id: TaskId, new_prio: u8) -> bool {
         TASK_TABLE_PRIORITY[slot].store(new_prio, Ordering::Relaxed);
         TASK_TABLE_SLICE[slot].store(slice_for_priority(new_prio), Ordering::Relaxed);
         if state == TaskState::Ready {
-            TASK_TABLE_ENQUEUE_TICK[slot].store(SCHED_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
+            TASK_TABLE_ENQUEUE_TICK[slot]
+                .store(SCHED_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
         }
         true
     })
@@ -1094,12 +1131,15 @@ pub fn task_take_unblocked_signals(id: TaskId, bits: u64) -> u64 {
             return 0;
         }
 
-        if TASK_TABLE_SIGNALS[slot].compare_exchange(
-            pending,
-            pending & !matched,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ).is_ok() {
+        if TASK_TABLE_SIGNALS[slot]
+            .compare_exchange(
+                pending,
+                pending & !matched,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
             return matched;
         }
     }
@@ -1211,12 +1251,15 @@ pub fn task_wait_all_consume_signals_until_tick(id: TaskId, bits: u64, deadline_
                 break;
             }
 
-            if TASK_TABLE_SIGNALS[slot].compare_exchange(
-                pending,
-                pending & !bits,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if TASK_TABLE_SIGNALS[slot]
+                .compare_exchange(
+                    pending,
+                    pending & !bits,
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 return bits;
             }
         }
@@ -1301,12 +1344,15 @@ pub fn task_wait_all_consume_signals(id: TaskId, bits: u64) -> u64 {
                 break;
             }
 
-            if TASK_TABLE_SIGNALS[slot].compare_exchange(
-                pending,
-                pending & !bits,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if TASK_TABLE_SIGNALS[slot]
+                .compare_exchange(
+                    pending,
+                    pending & !bits,
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 return bits;
             }
         }
@@ -1403,7 +1449,9 @@ pub fn debug_invariant_flags() -> u64 {
 
 /// Called from IRQ0 handler — no serial I/O allowed here.
 pub fn tick() {
-    let now = SCHED_TICKS.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+    let now = SCHED_TICKS
+        .fetch_add(1, Ordering::Relaxed)
+        .saturating_add(1);
 
     // Wake any sleeping tasks whose deadline has been reached.
     // Tasks sleeping with wake_at == u64::MAX are "parked" — only woken by
@@ -1577,10 +1625,14 @@ pub fn park_current_task() -> bool {
     set_task_state(id, TaskState::Sleeping);
     STAT_PARK_COUNT.fetch_add(1, Ordering::Relaxed);
     STAT_SLEEP_COUNT.fetch_add(1, Ordering::Relaxed);
-    CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
+    CURRENT_TASK
+        .compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire)
+        .ok();
 
     let sched_rsp = SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire);
-    unsafe { context_switch(TASK_TABLE_CONTEXT[slot].as_ptr(), sched_rsp); }
+    unsafe {
+        context_switch(TASK_TABLE_CONTEXT[slot].as_ptr(), sched_rsp);
+    }
 
     // Resumed by unpark_task + dispatch_once.
     true

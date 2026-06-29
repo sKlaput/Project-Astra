@@ -2,8 +2,8 @@
 // Internal syscall dispatch table (kernel-side scaffold).
 // ---------------------------------------------------------------------------
 
-use spin::Mutex;
 use core::sync::atomic::{AtomicU64, Ordering};
+use spin::Mutex;
 
 /// Unknown syscall sentinel.
 pub const SYS_ENOSYS: u64 = u64::MAX;
@@ -214,7 +214,8 @@ fn user_range_with_flags(ptr: usize, len: usize, need: u64) -> bool {
     let mut page = first_page;
 
     loop {
-        let Some(entry) = (unsafe { crate::memory::paging::lookup_page_entry_current(page) }) else {
+        let Some(entry) = (unsafe { crate::memory::paging::lookup_page_entry_current(page) })
+        else {
             return false;
         };
         if entry & need != need {
@@ -242,7 +243,11 @@ fn sys_add(a: u64, b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
 }
 
 fn sys_max(a: u64, b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
-    if a > b { a } else { b }
+    if a > b {
+        a
+    } else {
+        b
+    }
 }
 
 fn sys_xorrot(a: u64, b: u64, c: u64, d: u64, _e: u64, _f: u64) -> u64 {
@@ -270,15 +275,27 @@ fn sys_signal_clear(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u
 }
 
 fn sys_signal_wait_until(id: u64, bits: u64, deadline_tick: u64, _d: u64, _e: u64, _f: u64) -> u64 {
-    crate::scheduler::task_wait_signal_until_tick(crate::scheduler::TaskId(id), bits, deadline_tick) as u64
+    crate::scheduler::task_wait_signal_until_tick(crate::scheduler::TaskId(id), bits, deadline_tick)
+        as u64
 }
 
 fn sys_signal_wait(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     crate::scheduler::task_wait_signal(crate::scheduler::TaskId(id), bits) as u64
 }
 
-fn sys_signal_wait_all_until(id: u64, bits: u64, deadline_tick: u64, _d: u64, _e: u64, _f: u64) -> u64 {
-    crate::scheduler::task_wait_all_signals_until_tick(crate::scheduler::TaskId(id), bits, deadline_tick) as u64
+fn sys_signal_wait_all_until(
+    id: u64,
+    bits: u64,
+    deadline_tick: u64,
+    _d: u64,
+    _e: u64,
+    _f: u64,
+) -> u64 {
+    crate::scheduler::task_wait_all_signals_until_tick(
+        crate::scheduler::TaskId(id),
+        bits,
+        deadline_tick,
+    ) as u64
 }
 
 fn sys_signal_mask_get(id: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
@@ -293,16 +310,38 @@ fn sys_signal_unblock(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f: u64) ->
     crate::scheduler::task_unblock_signals(crate::scheduler::TaskId(id), bits)
 }
 
-fn sys_signal_wait_consume_until(id: u64, bits: u64, deadline_tick: u64, _d: u64, _e: u64, _f: u64) -> u64 {
-    crate::scheduler::task_wait_consume_signal_until_tick(crate::scheduler::TaskId(id), bits, deadline_tick)
+fn sys_signal_wait_consume_until(
+    id: u64,
+    bits: u64,
+    deadline_tick: u64,
+    _d: u64,
+    _e: u64,
+    _f: u64,
+) -> u64 {
+    crate::scheduler::task_wait_consume_signal_until_tick(
+        crate::scheduler::TaskId(id),
+        bits,
+        deadline_tick,
+    )
 }
 
 fn sys_signal_wait_consume(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     crate::scheduler::task_wait_consume_signal(crate::scheduler::TaskId(id), bits)
 }
 
-fn sys_signal_wait_all_consume_until(id: u64, bits: u64, deadline_tick: u64, _d: u64, _e: u64, _f: u64) -> u64 {
-    crate::scheduler::task_wait_all_consume_signals_until_tick(crate::scheduler::TaskId(id), bits, deadline_tick)
+fn sys_signal_wait_all_consume_until(
+    id: u64,
+    bits: u64,
+    deadline_tick: u64,
+    _d: u64,
+    _e: u64,
+    _f: u64,
+) -> u64 {
+    crate::scheduler::task_wait_all_consume_signals_until_tick(
+        crate::scheduler::TaskId(id),
+        bits,
+        deadline_tick,
+    )
 }
 
 fn sys_signal_wait_all_consume(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
@@ -310,7 +349,9 @@ fn sys_signal_wait_all_consume(id: u64, bits: u64, _c: u64, _d: u64, _e: u64, _f
 }
 
 fn sys_write_console(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
-    if ptr == 0 || len == 0 { return 0; }
+    if ptr == 0 || len == 0 {
+        return 0;
+    }
     let byte_len = (len as usize).min(512);
     if !user_readable_range(ptr as usize, byte_len) {
         return 0;
@@ -353,7 +394,7 @@ fn sys_send_msg(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
 
     // SAFETY: pointer range was validated above as user-readable.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
-    
+
     let sender_id = crate::scheduler::current_task().map(|t| t.0).unwrap_or(0);
     let mut msg = PENDING_MESSAGE.lock();
     msg.sender_task = sender_id;
@@ -362,7 +403,7 @@ fn sys_send_msg(ptr: u64, len: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
         msg.data[..len as usize].copy_from_slice(bytes);
     });
     drop(msg);
-    
+
     1
 }
 
@@ -370,12 +411,12 @@ fn sys_recv_msg(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
     if ptr == 0 {
         return u64::MAX;
     }
-    
+
     let mut msg = PENDING_MESSAGE.lock();
     if msg.len == 0 {
         return 0; // No message waiting
     }
-    
+
     let len = msg.len;
     if !user_writable_range(ptr as usize, 64) {
         return 0;
@@ -386,7 +427,7 @@ fn sys_recv_msg(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64 {
         buf[..len as usize].copy_from_slice(&msg.data[..len as usize]);
     });
     msg.len = 0; // Clear the pending message
-    
+
     len
 }
 
@@ -394,7 +435,7 @@ fn sys_get_fb_info(ptr: u64, _b: u64, _c: u64, _d: u64, _e: u64, _f: u64) -> u64
     if ptr == 0 {
         return 0;
     }
-    
+
     if let Some(info) = crate::boot::protocol::framebuffer_info() {
         if !user_writable_range(ptr as usize, core::mem::size_of::<u32>() * 8) {
             return 0;
@@ -462,10 +503,15 @@ fn sys_draw_rect(x: u64, y: u64, w: u64, h: u64, color: u64, _f: u64) -> u64 {
 
     for py in y..y_end {
         for px in x..x_end {
-            let byte_offset = py.saturating_mul(pitch).saturating_add(px.saturating_mul(4));
+            let byte_offset = py
+                .saturating_mul(pitch)
+                .saturating_add(px.saturating_mul(4));
             // SAFETY: framebuffer geometry is validated above and coordinates are clipped.
             unsafe {
-                info.addr.add(byte_offset).cast::<u32>().write_volatile(pixel);
+                info.addr
+                    .add(byte_offset)
+                    .cast::<u32>()
+                    .write_volatile(pixel);
             }
         }
     }
@@ -495,7 +541,10 @@ fn sys_draw_pixel(x: u64, y: u64, color: u64, _d: u64, _e: u64, _f: u64) -> u64 
         .saturating_add(x.saturating_mul(4));
     // SAFETY: framebuffer geometry is validated above and coordinates are in-bounds.
     unsafe {
-        info.addr.add(byte_offset).cast::<u32>().write_volatile(pixel);
+        info.addr
+            .add(byte_offset)
+            .cast::<u32>()
+            .write_volatile(pixel);
     }
     1
 }

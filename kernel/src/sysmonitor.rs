@@ -12,22 +12,22 @@ use crate::input::Key;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const BG:           u32 = 0x0A0E14;
-const HEADING_COL:  u32 = 0x4FC3F7;
-const LABEL_COL:    u32 = 0x546E7A;
-const VALUE_COL:    u32 = 0xE8F4FD;
-const ACCENT_COL:   u32 = 0xB0D4B8;
-const SEPARATOR:    u32 = 0x1E3A5F;
-const BAR_BG:       u32 = 0x1A2332;
-const BAR_FILL:     u32 = 0x4FC3F7;
+const BG: u32 = 0x0A0E14;
+const HEADING_COL: u32 = 0x4FC3F7;
+const LABEL_COL: u32 = 0x546E7A;
+const VALUE_COL: u32 = 0xE8F4FD;
+const ACCENT_COL: u32 = 0xB0D4B8;
+const SEPARATOR: u32 = 0x1E3A5F;
+const BAR_BG: u32 = 0x1A2332;
+const BAR_FILL: u32 = 0x4FC3F7;
 
 // ── Font metrics (scale 2) ────────────────────────────────────────────────────
 
-const SCALE:  usize = 2;
-const CHAR_W: usize = 6 * SCALE;   // 12
-const CHAR_H: usize = 8 * SCALE;   // 16
-const PAD_X:  usize = 14;
-const PAD_Y:  usize = 10;
+const SCALE: usize = 2;
+const CHAR_W: usize = 6 * SCALE; // 12
+const CHAR_H: usize = 8 * SCALE; // 16
+const PAD_X: usize = 14;
+const PAD_Y: usize = 10;
 
 // ── Stats snapshot for change detection ─────────────────────────────────────
 
@@ -35,18 +35,18 @@ const PAD_Y:  usize = 10;
 struct StatsSnap {
     uptime_secs: u64,
     heap_used_kb: u64,
-    heap_pages:   u64,
-    runnable:     u64,
-    win_count:    u64,
-    proc_count:   u64,
+    heap_pages: u64,
+    runnable: u64,
+    win_count: u64,
+    proc_count: u64,
 }
 
 impl StatsSnap {
     fn current() -> Self {
-        let ms  = crate::arch::x86_64::interrupts::uptime_ms();
+        let ms = crate::arch::x86_64::interrupts::uptime_ms();
         let heap = crate::memory::heap::get_telemetry();
         let used_kb = (heap.used_bytes / 1024) as u64;
-        let pages   = heap.mapped_pages as u64;
+        let pages = heap.mapped_pages as u64;
         let runnable = crate::scheduler::runnable_count() as u64;
         let win_count = crate::desktop::WIN_TABLE.lock().count as u64;
         let (_, proc_count) = crate::process::list_all();
@@ -69,14 +69,22 @@ pub struct SysMonitorApp {
 
 impl SysMonitorApp {
     pub fn new() -> Self {
-        SysMonitorApp { last_snap: StatsSnap::current() }
+        SysMonitorApp {
+            last_snap: StatsSnap::current(),
+        }
     }
 }
 
 impl App for SysMonitorApp {
-    fn title(&self) -> &str { "System Monitor" }
-    fn preferred_size(&self) -> (usize, usize) { (900, 520) }
-    fn app_id(&self) -> &'static str { "sysmonitor" }
+    fn title(&self) -> &str {
+        "System Monitor"
+    }
+    fn preferred_size(&self) -> (usize, usize) {
+        (900, 520)
+    }
+    fn app_id(&self) -> &'static str {
+        "sysmonitor"
+    }
 
     fn render(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
         render_stats(cx, cy, cw, ch);
@@ -89,7 +97,9 @@ impl App for SysMonitorApp {
         }
     }
 
-    fn refresh_interval_ms(&self) -> Option<u64> { Some(500) }
+    fn refresh_interval_ms(&self) -> Option<u64> {
+        Some(500)
+    }
 
     fn tick(&mut self) -> crate::app::AppAction {
         let snap = StatsSnap::current();
@@ -99,12 +109,12 @@ impl App for SysMonitorApp {
         // Only uptime ticked — redraw the single 900×16 uptime row instead of
         // the full 900×520 window.  The compositor scissor clips render() to
         // just those pixels, so the present blit is ~14 KB instead of ~1.8 MB.
-        let only_uptime = snap.uptime_secs  != self.last_snap.uptime_secs
+        let only_uptime = snap.uptime_secs != self.last_snap.uptime_secs
             && snap.heap_used_kb == self.last_snap.heap_used_kb
-            && snap.heap_pages   == self.last_snap.heap_pages
-            && snap.runnable     == self.last_snap.runnable
-            && snap.win_count    == self.last_snap.win_count
-            && snap.proc_count   == self.last_snap.proc_count;
+            && snap.heap_pages == self.last_snap.heap_pages
+            && snap.runnable == self.last_snap.runnable
+            && snap.win_count == self.last_snap.win_count
+            && snap.proc_count == self.last_snap.proc_count;
         self.last_snap = snap;
         if only_uptime {
             // Uptime row y-offset inside the client rect:
@@ -238,10 +248,17 @@ fn render_stats(cx: usize, cy: usize, cw: usize, ch: usize) {
             ry += CHAR_H;
         } else {
             for i in 0..tbl.count {
-                if ry + CHAR_H > cy + ch / 2 { break; }
+                if ry + CHAR_H > cy + ch / 2 {
+                    break;
+                }
                 let snap = &tbl.snaps[i];
-                let title = unsafe { core::str::from_utf8_unchecked(&snap.title[..snap.title_len]) };
-                let (tc, badge_col) = if snap.minimized { (LABEL_COL, 0x3A4A5A) } else { (VALUE_COL, ACCENT_COL) };
+                let title =
+                    unsafe { core::str::from_utf8_unchecked(&snap.title[..snap.title_len]) };
+                let (tc, badge_col) = if snap.minimized {
+                    (LABEL_COL, 0x3A4A5A)
+                } else {
+                    (VALUE_COL, ACCENT_COL)
+                };
                 // Colour badge
                 framebuffer::fill_rect(rx, ry + 4, 6, 6, badge_col);
                 framebuffer::draw_text_scaled(rx + 10, ry, title, tc, 1);
@@ -267,25 +284,39 @@ fn render_stats(cx: usize, cy: usize, cw: usize, ch: usize) {
             framebuffer::draw_text_at(rx, ry, "PID  STATE    NAME", LABEL_COL);
             ry += 12;
             for i in 0..count {
-                if ry + 12 > cy + ch { break; }
+                if ry + 12 > cy + ch {
+                    break;
+                }
                 let e = &entries[i];
                 let state_str: &str = match e.state {
                     crate::process::ProcessState::Running => "running",
-                    crate::process::ProcessState::Exited  => "exited ",
-                    crate::process::ProcessState::Empty   => "empty  ",
+                    crate::process::ProcessState::Exited => "exited ",
+                    crate::process::ProcessState::Empty => "empty  ",
                 };
-                let col = if e.state == crate::process::ProcessState::Running { 0x66FF66 } else { 0x888888 };
+                let col = if e.state == crate::process::ProcessState::Running {
+                    0x66FF66
+                } else {
+                    0x888888
+                };
                 // Build "PID  STATE  name" line
                 let mut buf = [0u8; 40];
                 let mut p = 0usize;
                 p += fmt_u64_sm(&mut buf[p..], e.pid);
-                while p < 5 { buf[p] = b' '; p += 1; }
+                while p < 5 {
+                    buf[p] = b' ';
+                    p += 1;
+                }
                 let sb = state_str.as_bytes();
                 let sl = sb.len().min(40 - p);
-                buf[p..p + sl].copy_from_slice(&sb[..sl]); p += sl;
-                while p < 14 { buf[p] = b' '; p += 1; }
+                buf[p..p + sl].copy_from_slice(&sb[..sl]);
+                p += sl;
+                while p < 14 {
+                    buf[p] = b' ';
+                    p += 1;
+                }
                 let nl = e.name_len.min(40 - p);
-                buf[p..p + nl].copy_from_slice(&e.name[..nl]); p += nl;
+                buf[p..p + nl].copy_from_slice(&e.name[..nl]);
+                p += nl;
                 let s = unsafe { core::str::from_utf8_unchecked(&buf[..p]) };
                 framebuffer::draw_text_at(rx, ry, s, col);
                 ry += 11;
@@ -320,8 +351,13 @@ fn draw_stat_kb(x: usize, y: usize, label: &str, kb: u64, _cw: usize) {
 // ── Number formatting (no alloc) ──────────────────────────────────────────────
 
 fn fmt_u64(buf: &mut [u8], mut n: u64) -> usize {
-    if buf.is_empty() { return 0; }
-    if n == 0 { buf[0] = b'0'; return 1; }
+    if buf.is_empty() {
+        return 0;
+    }
+    if n == 0 {
+        buf[0] = b'0';
+        return 1;
+    }
     let mut tmp = [0u8; 20];
     let mut pos = tmp.len();
     while n > 0 {
@@ -337,27 +373,37 @@ fn fmt_u64(buf: &mut [u8], mut n: u64) -> usize {
 fn fmt_uptime(buf: &mut [u8], hrs: u64, mins: u64, secs: u64, ms: u64) -> usize {
     let mut pos = 0;
     pos += fmt_u64(&mut buf[pos..], hrs);
-    buf[pos] = b'h'; pos += 1;
-    buf[pos] = b' '; pos += 1;
+    buf[pos] = b'h';
+    pos += 1;
+    buf[pos] = b' ';
+    pos += 1;
     pos += fmt_padded2(&mut buf[pos..], mins);
-    buf[pos] = b'm'; pos += 1;
-    buf[pos] = b' '; pos += 1;
+    buf[pos] = b'm';
+    pos += 1;
+    buf[pos] = b' ';
+    pos += 1;
     pos += fmt_padded2(&mut buf[pos..], secs);
-    buf[pos] = b'.'; pos += 1;
+    buf[pos] = b'.';
+    pos += 1;
     pos += fmt_padded3(&mut buf[pos..], ms);
-    buf[pos] = b's'; pos += 1;
+    buf[pos] = b's';
+    pos += 1;
     pos
 }
 
 fn fmt_padded2(buf: &mut [u8], n: u64) -> usize {
-    if buf.len() < 2 { return 0; }
+    if buf.len() < 2 {
+        return 0;
+    }
     buf[0] = b'0' + ((n / 10) % 10) as u8;
     buf[1] = b'0' + (n % 10) as u8;
     2
 }
 
 fn fmt_padded3(buf: &mut [u8], n: u64) -> usize {
-    if buf.len() < 3 { return 0; }
+    if buf.len() < 3 {
+        return 0;
+    }
     buf[0] = b'0' + ((n / 100) % 10) as u8;
     buf[1] = b'0' + ((n / 10) % 10) as u8;
     buf[2] = b'0' + (n % 10) as u8;
@@ -374,11 +420,20 @@ fn fmt_pct(buf: &mut [u8], pct: u64) -> usize {
 }
 
 fn fmt_u64_sm(buf: &mut [u8], mut n: u64) -> usize {
-    if buf.is_empty() { return 0; }
-    if n == 0 { buf[0] = b'0'; return 1; }
+    if buf.is_empty() {
+        return 0;
+    }
+    if n == 0 {
+        buf[0] = b'0';
+        return 1;
+    }
     let mut tmp = [0u8; 20];
     let mut pos = tmp.len();
-    while n > 0 { pos -= 1; tmp[pos] = b'0' + (n % 10) as u8; n /= 10; }
+    while n > 0 {
+        pos -= 1;
+        tmp[pos] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
     let len = (tmp.len() - pos).min(buf.len());
     buf[..len].copy_from_slice(&tmp[pos..pos + len]);
     len

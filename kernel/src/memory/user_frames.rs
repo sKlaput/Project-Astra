@@ -6,8 +6,8 @@
 // process exits without freeing shared kernel-managed mappings.
 // ---------------------------------------------------------------------------
 
-use spin::Mutex;
 use crate::memory::frame_allocator::{deallocate_frame, Frame};
+use spin::Mutex;
 
 const MAX_PROCS: usize = 16;
 const MAX_FRAMES_PER_PROC: usize = 256;
@@ -29,8 +29,7 @@ impl UserFrameEntry {
     }
 }
 
-static TABLE: Mutex<[UserFrameEntry; MAX_PROCS]> =
-    Mutex::new([UserFrameEntry::empty(); MAX_PROCS]);
+static TABLE: Mutex<[UserFrameEntry; MAX_PROCS]> = Mutex::new([UserFrameEntry::empty(); MAX_PROCS]);
 
 /// Register a frame as owned by the user process whose PML4 root is `pml4_phys`.
 /// Returns `false` if no slot is available.

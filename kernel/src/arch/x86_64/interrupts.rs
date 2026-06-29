@@ -248,10 +248,11 @@ fn init_idt_staged(stage: u8) {
         if stage >= 3 {
             unsafe {
                 idt.double_fault
-                .set_handler_fn(double_fault_handler)
-                .set_stack_index(crate::arch::x86_64::gdt::DOUBLE_FAULT_IST_INDEX);
+                    .set_handler_fn(double_fault_handler)
+                    .set_stack_index(crate::arch::x86_64::gdt::DOUBLE_FAULT_IST_INDEX);
             }
-            idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
+            idt.general_protection_fault
+                .set_handler_fn(general_protection_fault_handler);
             idt.page_fault.set_handler_fn(page_fault_handler);
             crate::serial::write_line("interrupts: idt stage3 exceptions set");
         }
@@ -268,15 +269,14 @@ fn init_idt_staged(stage: u8) {
             // EOI instead of PIC EOI. Programmed by apic::install_lapic_timer
             // at runtime; before that the LVT is masked so this vector is dormant.
             unsafe {
-                idt[LAPIC_TIMER_VECTOR]
-                    .set_handler_addr(VirtAddr::new(lapic_timer_interrupt_naked as *const () as u64));
+                idt[LAPIC_TIMER_VECTOR].set_handler_addr(VirtAddr::new(
+                    lapic_timer_interrupt_naked as *const () as u64,
+                ));
             }
             // Keyboard IRQ1 (vector 0x21) — handler dispatches to KEYBOARD_HANDLER fn-ptr.
-            idt[PIC_MASTER_VECTOR_OFFSET + 1]
-                .set_handler_fn(keyboard_irq_handler);
+            idt[PIC_MASTER_VECTOR_OFFSET + 1].set_handler_fn(keyboard_irq_handler);
             // Mouse IRQ12 (slave IRQ4, vector PIC_SLAVE_VECTOR_OFFSET+4 = 0x2C).
-            idt[PIC_SLAVE_VECTOR_OFFSET + 4]
-                .set_handler_fn(mouse_irq_handler);
+            idt[PIC_SLAVE_VECTOR_OFFSET + 4].set_handler_fn(mouse_irq_handler);
             idt[SPURIOUS_MASTER_IRQ_VECTOR].set_handler_fn(spurious_master_irq_handler);
             idt[SPURIOUS_SLAVE_IRQ_VECTOR].set_handler_fn(spurious_slave_irq_handler);
             crate::serial::write_line("interrupts: idt stage4 timer+keyboard set");
@@ -298,7 +298,8 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
         if probe_active {
             RING3_BREAKPOINT_PROBE_ACTIVE.store(false, Ordering::Relaxed);
             RING3_BREAKPOINT_PROBE_HIT.store(true, Ordering::Relaxed);
-            RING3_BREAKPOINT_PROBE_RIP.store(stack_frame.instruction_pointer.as_u64(), Ordering::Relaxed);
+            RING3_BREAKPOINT_PROBE_RIP
+                .store(stack_frame.instruction_pointer.as_u64(), Ordering::Relaxed);
             RING3_BREAKPOINT_PROBE_CS.store(code_segment, Ordering::Relaxed);
         }
 
@@ -346,7 +347,10 @@ extern "x86-interrupt" fn spurious_slave_irq_handler(_stack_frame: InterruptStac
     send_pic_eoi_slave();
 }
 
-extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, _error_code: u64) -> ! {
+extern "x86-interrupt" fn double_fault_handler(
+    stack_frame: InterruptStackFrame,
+    _error_code: u64,
+) -> ! {
     crate::serial::write_line("!!!! DOUBLE FAULT !!!!");
     crate::serial::write_str("RIP: ");
     crate::serial::write_u64(stack_frame.instruction_pointer.as_u64());
@@ -356,7 +360,10 @@ extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame,
     }
 }
 
-extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame, _error_code: u64) {
+extern "x86-interrupt" fn general_protection_fault_handler(
+    stack_frame: InterruptStackFrame,
+    _error_code: u64,
+) {
     let cpl = stack_frame.code_segment.0 as u64 & 3;
 
     if cpl == 3 {
@@ -373,7 +380,10 @@ extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: Interrup
     crate::serial::write_line("");
 }
 
-extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
+extern "x86-interrupt" fn page_fault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
     let cpl = stack_frame.code_segment.0 as u64 & 3;
     let cr2: u64;
     unsafe {
@@ -387,10 +397,10 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, e
     // Bit 4: instruction fetch (NX violation when NXE enabled)
     let ec = error_code.bits();
     let present = (ec & 0x1) != 0;
-    let write   = (ec & 0x2) != 0;
-    let user    = (ec & 0x4) != 0;
-    let rsvd    = (ec & 0x8) != 0;
-    let ifetch  = (ec & 0x10) != 0;
+    let write = (ec & 0x2) != 0;
+    let user = (ec & 0x4) != 0;
+    let rsvd = (ec & 0x8) != 0;
+    let ifetch = (ec & 0x10) != 0;
 
     if cpl == 3 {
         // Ring-3 page fault: log, kill the user task, resume the scheduler.
@@ -401,11 +411,17 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, e
         crate::serial::write_str(" ec=");
         crate::serial::write_u64(ec);
         crate::serial::write_str(" cause=");
-        crate::serial::write_str(if !present { "not-present" }
-                                 else if rsvd { "rsvd-pte" }
-                                 else if ifetch { "exec-no-x" }
-                                 else if write { "write-violation" }
-                                 else { "read-violation" });
+        crate::serial::write_str(if !present {
+            "not-present"
+        } else if rsvd {
+            "rsvd-pte"
+        } else if ifetch {
+            "exec-no-x"
+        } else if write {
+            "write-violation"
+        } else {
+            "read-violation"
+        });
         crate::serial::write_str(if user { " src=user" } else { " src=kernel" });
         crate::serial::write_line("");
         crate::scheduler::abort_current_user_task_from_fault();
@@ -419,11 +435,27 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, e
     crate::serial::write_str(" EC: ");
     crate::serial::write_u64(ec);
     crate::serial::write_str(" [");
-    if !present { crate::serial::write_str("not-present "); } else { crate::serial::write_str("protection "); }
-    if write { crate::serial::write_str("write "); } else { crate::serial::write_str("read "); }
-    if user { crate::serial::write_str("user "); } else { crate::serial::write_str("supervisor "); }
-    if rsvd { crate::serial::write_str("rsvd "); }
-    if ifetch { crate::serial::write_str("ifetch "); }
+    if !present {
+        crate::serial::write_str("not-present ");
+    } else {
+        crate::serial::write_str("protection ");
+    }
+    if write {
+        crate::serial::write_str("write ");
+    } else {
+        crate::serial::write_str("read ");
+    }
+    if user {
+        crate::serial::write_str("user ");
+    } else {
+        crate::serial::write_str("supervisor ");
+    }
+    if rsvd {
+        crate::serial::write_str("rsvd ");
+    }
+    if ifetch {
+        crate::serial::write_str("ifetch ");
+    }
     crate::serial::write_line("]");
 }
 

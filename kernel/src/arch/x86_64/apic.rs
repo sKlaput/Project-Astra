@@ -87,7 +87,11 @@ pub fn family_model_stepping() -> (u32, u32, u32) {
     let base_family = (eax >> 8) & 0xF;
     let ext_model = (eax >> 16) & 0xF;
     let ext_family = (eax >> 20) & 0xFF;
-    let family = if base_family == 0xF { base_family + ext_family } else { base_family };
+    let family = if base_family == 0xF {
+        base_family + ext_family
+    } else {
+        base_family
+    };
     let model = if base_family == 0x6 || base_family == 0xF {
         (ext_model << 4) | base_model
     } else {
@@ -186,7 +190,6 @@ pub fn log_summary() {
     crate::serial::write_line("");
 }
 
-
 // ──────────────────────────────────────────────────────────────────────────
 // Local APIC MMIO + timer calibration.
 //
@@ -264,7 +267,9 @@ pub fn calibrate_timer() {
             return;
         }
         let ticks_per_ms = (elapsed_ticks as u64 / actual_ms) as u32;
-        let bus_hz = (ticks_per_ms as u64).saturating_mul(1000).saturating_mul(16) as u32;
+        let bus_hz = (ticks_per_ms as u64)
+            .saturating_mul(1000)
+            .saturating_mul(16) as u32;
         TICKS_PER_MS.store(ticks_per_ms, AOrd::Relaxed);
         MEASURED_BUS_HZ.store(bus_hz, AOrd::Relaxed);
         CALIBRATED.store(true, AOrd::Relaxed);
@@ -311,7 +316,6 @@ pub fn log_calibration() {
     crate::serial::write_line("");
 }
 
-
 const LVT_TIMER_PERIODIC: u32 = 1 << 17;
 
 static LAPIC_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -357,8 +361,7 @@ pub fn install_lapic_timer(hz: u32) -> bool {
         // Program LVT: periodic | vector 0x40.
         lapic_write(
             LAPIC_REG_LVT_TIMER,
-            LVT_TIMER_PERIODIC
-                | crate::arch::x86_64::interrupts::LAPIC_TIMER_VECTOR as u32,
+            LVT_TIMER_PERIODIC | crate::arch::x86_64::interrupts::LAPIC_TIMER_VECTOR as u32,
         );
         // Divider /16 was set in calibrate_timer; reconfirm in case.
         lapic_write(LAPIC_REG_DIVIDE_CONFIG, 0b0011);

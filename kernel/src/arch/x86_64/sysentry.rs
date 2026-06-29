@@ -59,11 +59,9 @@ core::arch::global_asm!(
     ".intel_syntax noprefix",
     "    .global syscall_entry_stub",
     "syscall_entry_stub:",
-
     // Save user RSP and switch to dedicated kernel syscall stack.
     "    mov qword ptr [rip + SYSCALL_USER_RSP], rsp",
     "    lea rsp, [rip + SYSCALL_KERNEL_STACK + 32768]",
-
     // Save user return state and callee-saved registers (8 pushes => 0 mod 16).
     "    push rcx",
     "    push r11",
@@ -73,13 +71,11 @@ core::arch::global_asm!(
     "    push r13",
     "    push r14",
     "    push r15",
-
     // Alignment dummy + 7th syscall arg.
     // push rax => RSP at 8 mod 16 (also preserves nr for the shuffle).
     // push r9  => RSP at 0 mod 16 (7th arg in correct pre-call position).
     "    push rax",
     "    push r9",
-
     // Shuffle syscall ABI -> SysV ABI for dispatch(nr, a1..a6):
     //   syscall: rax=nr, rdi=a1, rsi=a2, rdx=a3, r10=a4, r8=a5, r9=a6 (pushed)
     //   SysV:    rdi,   rsi,    rdx,    rcx,    r8,    r9,    [rsp+8 at entry]
@@ -89,12 +85,9 @@ core::arch::global_asm!(
     "    mov rdx, rsi",
     "    mov rsi, rdi",
     "    mov rdi, rax",
-
     "    call syscall_dispatch_rust",
-
     // Return value is in RAX.  Clean up 7th-arg push + alignment dummy.
     "    add rsp, 16",
-
     // Restore callee-saved registers.
     "    pop r15",
     "    pop r14",
@@ -104,7 +97,6 @@ core::arch::global_asm!(
     "    pop rbp",
     "    pop r11",
     "    pop rcx",
-
     // Restore user RSP and return to CPL3.
     "    mov rsp, qword ptr [rip + SYSCALL_USER_RSP]",
     "    sysretq",

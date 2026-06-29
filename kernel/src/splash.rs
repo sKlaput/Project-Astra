@@ -1,6 +1,5 @@
 /// Astra OS boot splash screen.
 /// Drawn once at boot, immediately after the framebuffer is available.
-
 use crate::framebuffer;
 
 const BG: u32 = 0x0A0B15;
@@ -13,7 +12,9 @@ pub fn draw_boot_splash() {
     if !framebuffer::ensure_ready() {
         return;
     }
-    let Some((w, h)) = framebuffer::dimensions() else { return };
+    let Some((w, h)) = framebuffer::dimensions() else {
+        return;
+    };
 
     framebuffer::clear(BG);
 

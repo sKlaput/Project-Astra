@@ -24,7 +24,13 @@ unsafe extern "C" {
     fn ring3_resume_saved_stack(saved_rsp: u64) -> !;
 }
 
-pub unsafe fn enter_user_mode(entry_ip: u64, user_rsp: u64, user_cs: u64, user_ss: u64, rflags: u64) {
+pub unsafe fn enter_user_mode(
+    entry_ip: u64,
+    user_rsp: u64,
+    user_cs: u64,
+    user_ss: u64,
+    rflags: u64,
+) {
     unsafe { ring3_enter_user_mode(entry_ip, user_rsp, user_cs, user_ss, rflags) }
 }
 
