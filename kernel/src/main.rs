@@ -28,7 +28,6 @@ mod net;
 mod notes;
 mod panic;
 mod poste14_gui_probes;
-mod poste14_gui_probes_refactored;
 mod process;
 mod rtc;
 mod scheduler;

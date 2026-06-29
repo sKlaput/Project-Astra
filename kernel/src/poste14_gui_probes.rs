@@ -7,8 +7,11 @@ mod cycle_five;
 mod cycle_four;
 mod cycle_three;
 mod cycle_two;
+mod permutations;
 mod runtime;
 mod v3_chain;
+
+pub(crate) use permutations::run_poste14_gui_permutations;
 
 use cycle_five::{
     probe_poste14_gui_guardrails_continuity_hysteresis_envelope_v3_baseline_extended5,

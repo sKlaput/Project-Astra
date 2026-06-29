@@ -1,10 +1,7 @@
-// REFACTORED: Replaces 24 individually-named permutation functions with parameterized factory.
-// Eliminates ~4000+ lines of repetition while preserving all 24 named probe executions.
+use super::subsystem_health_triplet;
+use crate::{arch, scheduler, serial};
 
-use super::*;
-
-/// Parameterized GUI probe factory: runs a named probe with standard triplet validation.
-/// This replaces 24 nearly-identical functions with a single factory function.
+/// Run one named GUI readiness permutation with the shared triplet validation.
 fn run_gui_probe_permutation(_probe_name: &str, short_name: &str) {
     let uptime_before = arch::x86_64::interrupts::uptime_ms();
     let ticks_before = scheduler::ticks();
@@ -79,8 +76,7 @@ fn run_gui_probe_permutation(_probe_name: &str, short_name: &str) {
     serial::write_line(if poste14_contract_ok { "PASS" } else { "FAIL" });
 }
 
-/// Configuration table for 24 GUI probe permutations.
-/// Each entry: (full_probe_name, short_label_for_output)
+/// Configuration table for the GUI probe permutations.
 const GUI_PROBE_PERMUTATIONS: &[(&str, &str)] = &[
     ("recovery_envelope_guardrails", "recover-envelope-guard"),
     (
@@ -141,20 +137,10 @@ const GUI_PROBE_PERMUTATIONS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Run all 24 GUI probe permutations using parameterized factory.
-/// Replaces 24 individual function calls with single loop.
-pub(super) fn run_poste14_gui_permutations_refactored() {
+pub(crate) fn run_poste14_gui_permutations() {
     serial::write_line("=== POST-E14 GUI PROBE CHAIN (REFACTORED) ===");
 
     for (probe_name, short_name) in GUI_PROBE_PERMUTATIONS {
         run_gui_probe_permutation(probe_name, short_name);
     }
-}
-
-// Helper function used by all probes
-fn subsystem_health_triplet() -> (bool, bool, bool) {
-    let scheduler_ok = crate::subsystem_validation::validate_scheduler_operational();
-    let process_ok = crate::subsystem_validation::validate_process_subsystem_present();
-    let syscall_ok = crate::subsystem_validation::validate_syscall_dispatch_safe();
-    (scheduler_ok, process_ok, syscall_ok)
 }

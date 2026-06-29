@@ -2,10 +2,7 @@
 /// Organized by execution phase (E-series), moving from core infrastructure
 /// to higher-level subsystem probing. Each phase is self-contained and called
 /// only once from kmain.
-use crate::{
-    arch, boot_probes, poste14_gui_probes, poste14_gui_probes_refactored, serial,
-    subsystem_validation,
-};
+use crate::{arch, boot_probes, poste14_gui_probes, serial, subsystem_validation};
 
 pub const RUN_SYSCALL_USER_PHASE: bool = false;
 pub const RUN_E12_E13_BASELINE_PHASE: bool = false;
@@ -227,7 +224,7 @@ fn run_gui_focus_and_event_probes() {
 /// Run post-E14 GUI probe chain (cycles 2-5).
 fn run_poste14_gui_probe_chain() {
     probe_poste14_gui_consolidated_baseline();
-    poste14_gui_probes_refactored::run_poste14_gui_permutations_refactored();
+    poste14_gui_probes::run_poste14_gui_permutations();
     poste14_gui_probes::run_poste14_gui_probe_chain();
 }
 
