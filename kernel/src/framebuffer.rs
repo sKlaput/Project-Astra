@@ -386,19 +386,6 @@ impl FramebufferWriter {
         }
     }
 
-    // ── Hardware volatile write ───────────────────────────────────────────
-
-    fn put_pixel_front(&self, x: usize, y: usize, color: u32) {
-        if x >= self.width || y >= self.height {
-            return;
-        }
-        let byte_offset = y * self.pitch + x * (self.bpp / 8);
-        unsafe {
-            let ptr = self.addr.add(byte_offset).cast::<u32>();
-            ptr.write_volatile(color);
-        }
-    }
-
     // ── Present (backbuffer → hardware) ───────────────────────────────────
 
     fn present_region(&self, x: usize, y: usize, w: usize, h: usize) {

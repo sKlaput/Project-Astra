@@ -152,4 +152,3 @@ impl FileManagerApp {
         AppAction::Nothing
     }
 }
-

@@ -46,7 +46,6 @@ const FOOD_INNER: u32 = 0xFF8888;
 const SCORE_COL: u32 = 0x70E070;
 const HI_COL: u32 = 0xE0C040;
 const TITLE_COL: u32 = 0x40C060;
-const DIM_COL: u32 = 0x204020;
 const OVER_BG: u32 = 0x0C1A0C;
 const OVER_TITLE: u32 = 0xFF6060;
 const OVER_TEXT: u32 = 0xB0C8B0;

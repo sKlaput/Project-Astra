@@ -533,4 +533,3 @@ impl FileManagerApp {
         (tx, TILE_TOP, TILE_W, TILE_H)
     }
 }
-

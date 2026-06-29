@@ -179,4 +179,3 @@ impl FileManagerApp {
         AppAction::RedrawAll
     }
 }
-

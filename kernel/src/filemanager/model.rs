@@ -76,4 +76,3 @@ impl Entry {
         core::str::from_utf8(&self.name[..self.nlen]).unwrap_or("?")
     }
 }
-

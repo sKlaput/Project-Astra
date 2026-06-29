@@ -155,4 +155,3 @@ fn cursor_bitmap(shape: CursorShape) -> &'static [[u8; CURSOR_W]; CURSOR_H] {
         CursorShape::Hand => &CURSOR_HAND,
     }
 }
-

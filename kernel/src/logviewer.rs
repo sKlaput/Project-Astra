@@ -29,7 +29,6 @@ const LINE_COL: u32 = 0xA0C8A8;
 const DIM_COL: u32 = 0x2A5030;
 const NUM_COL: u32 = 0x2A6038;
 const STATUS_BG: u32 = 0x091408;
-const STATUS_COL: u32 = 0x3A6040;
 const STATUS_VAL: u32 = 0x60A870;
 const SCROLL_BG: u32 = 0x0A1810;
 const SCROLL_FG: u32 = 0x1E4828;
@@ -50,8 +49,6 @@ const SCROLL_W: usize = 6;
 
 /// Maximum number of log lines displayed.
 const MAX_LINES: usize = 512;
-/// Maximum line length kept in the view buffer.
-const MAX_LINE_LEN: usize = 200;
 /// Total byte storage for all lines (lines * avg_len).
 const VIEW_BUF: usize = MAX_LINES * 80;
 

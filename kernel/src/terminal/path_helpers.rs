@@ -82,4 +82,3 @@ fn write_hex64(buf: &mut [u8], n: u64) -> usize {
     }
     18
 }
-

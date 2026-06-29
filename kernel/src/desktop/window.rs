@@ -109,4 +109,3 @@ fn hit_resize_zone(win: &Window, mx: i32, my: i32) -> Option<ResizeZone> {
         _ => None,
     }
 }
-

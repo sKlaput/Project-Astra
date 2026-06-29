@@ -1,13 +1,11 @@
 // ── Unified app registry ─────────────────────────────────────────────────────
 //
 // Single source of truth for all launch paths.
-// `app_id`   – must match App::app_id() in the corresponding module.
 // `label`    – shown on desktop icon, launcher title, and taskbar button.
 // `icon_sub` – short subtitle drawn inside the icon cell (≤10 chars).
 // `desc`     – one-line description shown in the launcher panel.
 
 struct AppDesc {
-    app_id: &'static str,
     label: &'static str,
     icon_sub: &'static str,
     desc: &'static str,
@@ -18,77 +16,66 @@ struct AppDesc {
 
 const APP_REGISTRY: [AppDesc; NUM_APPS] = [
     AppDesc {
-        app_id: "terminal",
         label: "Terminal",
         icon_sub: "Shell",
         desc: "Open a shell",
         make: || Box::new(TerminalApp::new()),
     },
     AppDesc {
-        app_id: "filemanager",
         label: "This PC",
         icon_sub: "ThisPc",
         desc: "Browse files",
         make: || Box::new(FileManagerApp::new()),
     },
     AppDesc {
-        app_id: "settings",
         label: "Settings",
         icon_sub: "Config",
         desc: "Preferences",
         make: || Box::new(SettingsApp::new()),
     },
     AppDesc {
-        app_id: "sysmonitor",
         label: "Sys Monitor",
         icon_sub: "Stats",
         desc: "Performance",
         make: || Box::new(SysMonitorApp::new()),
     },
     AppDesc {
-        app_id: "calculator",
         label: "Calculator",
         icon_sub: "Calc",
         desc: "4-function calc",
         make: || Box::new(CalculatorApp::new()),
     },
     AppDesc {
-        app_id: "imageviewer",
         label: "Viewer",
         icon_sub: "Images",
         desc: "View PPM images",
         make: || Box::new(ImageViewerApp::new()),
     },
     AppDesc {
-        app_id: "notes",
         label: "Notes",
         icon_sub: "Notepad",
         desc: "Scratchpad",
         make: || Box::new(NotesApp::new()),
     },
     AppDesc {
-        app_id: "logviewer",
         label: "Log Viewer",
         icon_sub: "Logs",
         desc: "Kernel log",
         make: || Box::new(LogViewerApp::new()),
     },
     AppDesc {
-        app_id: "about",
         label: "About",
         icon_sub: "Info",
         desc: "About Astra OS",
         make: || Box::new(AboutApp::new()),
     },
     AppDesc {
-        app_id: "snake",
         label: "Snake",
         icon_sub: "Game",
         desc: "Classic snake",
         make: || Box::new(SnakeApp::new()),
     },
     AppDesc {
-        app_id: "tetris",
         label: "Tetris",
         icon_sub: "Game",
         desc: "Classic Tetris",
@@ -488,4 +475,3 @@ fn draw_app_icon(idx: usize, r: Rect) {
         _ => {}
     }
 }
-

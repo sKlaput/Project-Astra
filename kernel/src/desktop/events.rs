@@ -191,4 +191,3 @@ impl Desktop {
         self.open_window(app);
     }
 }
-

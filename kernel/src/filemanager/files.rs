@@ -998,4 +998,3 @@ impl FileManagerApp {
         AppAction::Nothing
     }
 }
-

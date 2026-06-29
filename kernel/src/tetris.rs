@@ -444,10 +444,6 @@ impl TetrisApp {
         }
     }
 
-    fn state(&self) -> &TetrisState {
-        unsafe { &*self.inner.get() }
-    }
-
     fn state_mut(&mut self) -> &mut TetrisState {
         self.inner.get_mut()
     }

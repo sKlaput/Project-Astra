@@ -96,15 +96,3 @@ pub fn validate_scheduler_context_switching() -> bool {
     // (unless we're in a very tight timing window, which is rare)
     after >= before
 }
-
-/// Validate process table reuse is working (running AND exited processes exist).
-pub fn validate_process_table_reuse() -> bool {
-    let (running, exited, _empty) = crate::process::state_counts();
-
-    // To prove reuse works, we need evidence that:
-    // 1. Processes have been created and run (running > 0)
-    // 2. Processes have been exited and cleaned up (exited > 0)
-    // 3. Both states exist simultaneously (proof of reuse mechanics)
-
-    running > 0 && exited > 0
-}

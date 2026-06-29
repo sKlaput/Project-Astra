@@ -14,13 +14,6 @@ use spin::Mutex;
 
 // ── Port I/O helpers ──────────────────────────────────────────────────────────
 
-unsafe fn in8(port: u16) -> u8 {
-    let v: u8;
-    unsafe {
-        core::arch::asm!("in al, dx", out("al") v, in("dx") port, options(nomem, nostack));
-    }
-    v
-}
 unsafe fn in16(port: u16) -> u16 {
     let v: u16;
     unsafe {
@@ -107,7 +100,6 @@ const VIO_QUEUE_SIZE: u16 = 0x0C; // virtqueue size (R, 16-bit)
 const VIO_QUEUE_SEL: u16 = 0x0E; // virtqueue select (W, 16-bit)
 const VIO_QUEUE_NTF: u16 = 0x10; // virtqueue notify (W, 16-bit)
 const VIO_DEV_STATUS: u16 = 0x12; // device status (R/W, 8-bit)
-const VIO_ISR: u16 = 0x13; // ISR status (R, 8-bit)
 const VIO_CFG: u16 = 0x14; // device-specific config (block: u64 capacity)
 
 const STS_ACK: u8 = 0x01;
@@ -170,8 +162,6 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 static IO_BASE: AtomicU16 = AtomicU16::new(0);
 static CAPACITY: AtomicU64 = AtomicU64::new(0); // sectors
 static AVAIL_IDX: AtomicU16 = AtomicU16::new(0); // next avail ring slot
-static LAST_USED: AtomicU16 = AtomicU16::new(0); // last processed used idx
-
 /// Mutex serialises all request operations.
 static BLK_LOCK: Mutex<()> = Mutex::new(());
 

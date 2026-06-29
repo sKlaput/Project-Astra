@@ -79,7 +79,6 @@ pub static WIN_TABLE: Mutex<WinTable> = Mutex::new(WinTable {
 fn desktop_bg() -> u32 {
     DESKTOP_BG_COLOR.load(AO::Relaxed)
 }
-const DESKTOP_BG: u32 = 0x0D1117; // kept for other callers
 const BAR_BG: u32 = 0x0A0E14;
 const BAR_BORDER: u32 = 0x1E3A5F;
 const BAR_TEXT: u32 = 0xD0E8FF;

@@ -342,4 +342,3 @@ fn cmd_mv(args: &str) {
         t.push_str("mv: failed", ERR_COL);
     }
 }
-

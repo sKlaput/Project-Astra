@@ -55,4 +55,3 @@ impl App for FileManagerApp {
         self.right_click_files(rel_x, rel_y)
     }
 }
-

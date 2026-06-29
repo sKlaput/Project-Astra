@@ -162,4 +162,3 @@ fn power_btn_rect(sw: usize) -> Rect {
         h: BTN_H,
     }
 }
-

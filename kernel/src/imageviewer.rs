@@ -38,7 +38,6 @@ const STATUS_COL: u32 = 0x4A7090;
 const STATUS_VAL: u32 = 0x7AA8C8;
 const BORDER_COL: u32 = 0x1A2F48;
 const ERR_COL: u32 = 0xB04040;
-const CANVAS_BG: u32 = 0x0C1018;
 const GRID_A: u32 = 0x0E1520; // checkerboard dark
 const GRID_B: u32 = 0x111C28; // checkerboard light
 const HELP_COL: u32 = 0x2A4060;

@@ -613,4 +613,3 @@ fn cmd_apictest() {
         t.push_str("apictest: FAIL (LAPIC tick rate diverged)", ERR_COL);
     }
 }
-

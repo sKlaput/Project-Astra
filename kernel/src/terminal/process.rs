@@ -111,4 +111,3 @@ fn cmd_kill(args: &str) {
         }
     }
 }
-

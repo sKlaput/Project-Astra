@@ -167,18 +167,6 @@ impl LogRing {
 
 static LOG_RING: spin::Mutex<LogRing> = spin::Mutex::new(LogRing::new());
 
-/// Append text to the in-memory log ring without going through serial.
-pub fn log_str(s: &str) {
-    LOG_RING.lock().push_str(s);
-}
-
-/// Append text + newline to the in-memory log ring.
-pub fn log_line(s: &str) {
-    let mut r = LOG_RING.lock();
-    r.push_str(s);
-    r.push(b'\n');
-}
-
 /// Copy at most `buf.len()` bytes from the ring into `buf`, starting from
 /// `offset` bytes from the oldest entry.  Returns the number of bytes copied.
 /// `total_bytes()` gives the total captured byte count (for pagination).

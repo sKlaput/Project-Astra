@@ -773,4 +773,3 @@ fn find_body_start(data: &[u8]) -> Option<usize> {
     }
     None
 }
-

@@ -22,7 +22,6 @@ use crate::input::Key;
 
 const BG: u32 = 0x080C12;
 const HEADER_BG: u32 = 0x0C1420;
-const HEADER_COL: u32 = 0xE8F4FD;
 const COLHDR_BG: u32 = 0x0A1018;
 const COLHDR_COL: u32 = 0x4A6880;
 const SEL_BG: u32 = 0x1C3F62; // clearly selected
@@ -30,7 +29,6 @@ const SEL_BORDER: u32 = 0x3870B0; // bright accent bar on left edge
 const SEL_COL: u32 = 0xF0F8FF;
 const DIR_COL: u32 = 0x5CB8FF;
 const FILE_COL: u32 = 0xB8D0E4;
-const UP_COL: u32 = 0xA0C8E8; // parent-entry text — brighter than normal dir
 const SIZE_COL: u32 = 0x4A6880;
 const SIZE_SEL: u32 = 0x8AB0CC;
 const BORDER_COL: u32 = 0x182840;

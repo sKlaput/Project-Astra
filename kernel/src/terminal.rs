@@ -154,15 +154,6 @@ impl TermState {
         self.cursor_pos = self.input_len;
         true
     }
-
-    /// Return current directory display string (e.g. "/docs").
-    fn cwd_str(&self) -> &str {
-        if self.cwd_plen == 0 {
-            "/"
-        } else {
-            core::str::from_utf8(&self.cwd_path[..self.cwd_plen]).unwrap_or("/")
-        }
-    }
 }
 
 static TERM: Mutex<TermState> = Mutex::new(TermState::new());

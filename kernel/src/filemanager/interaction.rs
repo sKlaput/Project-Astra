@@ -129,7 +129,6 @@ enum FmView {
 
 const TILE_W: usize = 160;
 const TILE_H: usize = 80;
-const TILE_PAD: usize = 20; // horizontal gap between tiles
 const TILE_TOP: usize = HEADER_H + 24; // top margin inside client area
 const TILE_BG: u32 = 0x0C1828;
 const TILE_HOV: u32 = 0x162840;
@@ -140,4 +139,3 @@ const TILE_SUB: u32 = 0x4A7090;
 const TILE_BAR: u32 = 0x1E5090;
 const TILE_USED: u32 = 0x2E78CC;
 const THIS_PC_BG: u32 = 0x060A10;
-
