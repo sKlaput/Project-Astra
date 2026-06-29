@@ -5,6 +5,9 @@ edition = "2021"
 
 [features]
 default = []
+boot-probe-baselines = []
+boot-probe-gui = []
+boot-probe-syscall-user = []
 gui-fb-user-deep-probe = []
 gui-fb-kernel-deep-probe = []
 net-scaffold = []

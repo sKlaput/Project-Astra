@@ -11,7 +11,7 @@ $summaryPath = "$OutPrefix-summary.txt"
 $jsonPath = "$OutPrefix-summary.json"
 
 Write-Host "[e13-validate] focused security run"
-& .\scripts\run-qemu.ps1 -Profile $BuildCfg -TimeoutSeconds $TimeoutSeconds -LogPath $logPath
+& .\scripts\run-qemu.ps1 -Profile $BuildCfg -TimeoutSeconds $TimeoutSeconds -LogPath $logPath -CargoFeatures boot-probe-baselines
 $qemuExit = $LASTEXITCODE
 
 if (-not (Test-Path $logPath)) {

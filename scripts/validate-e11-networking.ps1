@@ -11,7 +11,7 @@ $summaryPath = "$OutPrefix-summary.txt"
 $jsonPath = "$OutPrefix-summary.json"
 
 Write-Host "[e11-validate] focused networking run"
-& .\scripts\run-qemu.ps1 -Profile $BuildCfg -TimeoutSeconds $TimeoutSeconds -LogPath $logPath -CargoFeatures net-scaffold
+& .\scripts\run-qemu.ps1 -Profile $BuildCfg -TimeoutSeconds $TimeoutSeconds -LogPath $logPath -CargoFeatures @("net-scaffold", "boot-probe-gui")
 $qemuExit = $LASTEXITCODE
 
 if (-not (Test-Path $logPath)) {

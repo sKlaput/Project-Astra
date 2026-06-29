@@ -11,7 +11,7 @@ $summaryPath = "$OutPrefix-summary.txt"
 $jsonPath = "$OutPrefix-summary.json"
 
 Write-Host "[poste14-apic] focused APIC-readiness run"
-& .\scripts\run-qemu.ps1 -Profile $BuildCfg -TimeoutSeconds $TimeoutSeconds -LogPath $logPath
+& .\scripts\run-qemu.ps1 -Profile $BuildCfg -TimeoutSeconds $TimeoutSeconds -LogPath $logPath -CargoFeatures boot-probe-gui
 $qemuExit = $LASTEXITCODE
 
 if (-not (Test-Path $logPath)) {

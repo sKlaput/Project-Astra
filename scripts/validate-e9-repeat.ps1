@@ -32,7 +32,7 @@ $failRegexes = @(
 )
 $allRows = @()
 
-$cargoFeatures = @()
+$cargoFeatures = @("boot-probe-gui")
 if ($DiagUserDeepProbe) {
     $cargoFeatures += "gui-fb-user-deep-probe"
 }

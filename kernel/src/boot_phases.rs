@@ -4,9 +4,9 @@
 /// only once from kmain.
 use crate::{arch, boot_probes, poste14_gui_probes, serial, subsystem_validation};
 
-pub const RUN_SYSCALL_USER_PHASE: bool = false;
-pub const RUN_E12_E13_BASELINE_PHASE: bool = false;
-pub const RUN_E14_GUI_APPS_PHASE: bool = false;
+pub const RUN_SYSCALL_USER_PHASE: bool = cfg!(feature = "boot-probe-syscall-user");
+pub const RUN_E12_E13_BASELINE_PHASE: bool = cfg!(feature = "boot-probe-baselines");
+pub const RUN_E14_GUI_APPS_PHASE: bool = cfg!(feature = "boot-probe-gui");
 
 /// Phase E1-E2: Core memory and scheduler boot.
 pub fn phase_e1_e2_core() {
