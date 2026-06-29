@@ -14,6 +14,7 @@ $bootDir = Join-Path $imageRoot "boot"
 $efiBootDir = Join-Path $imageRoot "EFI\BOOT"
 $limineDir = Join-Path $PSScriptRoot "..\tools\Limine-10.x-binary"
 $bootx64 = Join-Path $limineDir "BOOTX64.EFI"
+$limineArchive = Join-Path $PSScriptRoot "..\tools\limine-v10.x-binary.zip"
 
 Write-Host "Building kernel for target:" $target
 $featureArgs = @()
@@ -39,8 +40,13 @@ if (-not (Test-Path $efiBootDir)) {
     New-Item -ItemType Directory -Path $efiBootDir -Force | Out-Null
 }
 
+if (-not (Test-Path $bootx64) -and (Test-Path $limineArchive)) {
+    Write-Host "Extracting missing Limine UEFI binary from $limineArchive"
+    Expand-Archive -LiteralPath $limineArchive -DestinationPath (Split-Path $limineDir -Parent) -Force
+}
+
 if (-not (Test-Path $bootx64)) {
-    Write-Error "Missing Limine UEFI binary at $bootx64"
+    Write-Error "Missing Limine UEFI binary at $bootx64 and archive at $limineArchive"
     exit 1
 }
 

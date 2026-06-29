@@ -6,3 +6,15 @@
 *.iso
 *.efi
 *.pdb
+
+# Local scratch work that is unrelated to the OS repository.
+/.tmp_*
+/$dst/
+/anno_mod_work/
+/wotmod_work/
+/scripts/Get-HPBiosConfig.ps1
+/scripts/HP-BiosPassword.txt
+/scripts/Set-HPBiosConfig.ps1
+/tools/vgmstream-win64.zip
+/tools/vgmstream/
+/tools/wwiser/
