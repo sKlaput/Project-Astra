@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "Proprietary"
-version = "0.1.0"
+version = "0.3.0-dev"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

@@ -44,7 +44,7 @@ struct Row {
 const INFO_ROWS: &[Row] = &[
     Row {
         label: "Version",
-        value: "Astra OS v0.1.0 (dev)",
+        value: "Astra OS v0.3.0-dev",
     },
     Row {
         label: "Architecture",
@@ -160,7 +160,7 @@ impl App for AboutApp {
 
         let title_x = cx + PAD_X + 90;
         framebuffer::draw_text_scaled(title_x, y + 4, "ASTRA OS", TITLE_COL, 2);
-        framebuffer::draw_text_at(title_x, y + 24, "v0.1.0-dev", VER_COL);
+        framebuffer::draw_text_at(title_x, y + 24, "v0.3.0-dev", VER_COL);
         framebuffer::draw_text_at(
             title_x,
             y + 38,

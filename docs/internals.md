@@ -83,7 +83,7 @@ No raw kernel pointers are ever exposed to user space.
 ## Scheduler
 
 - Cooperative + PIT preemption (100 Hz tick → ~10 ms slices)
-- Single CPU only (no SMP)
+- BSP-only scheduling; application processors complete their Limine bootstrap handshake and then park
 - Fixed-size task table (`MAX_TASKS`)
 - Task states: `Runnable`, `Blocked`, `Sleeping(wake_tick)`, `Terminated`
 - User tasks enter the same scheduler as kernel tasks; dispatch switches to ring 3 via `iretq` trampoline, returns through SYSCALL/exception

@@ -43,6 +43,15 @@ A from-scratch desktop operating system written entirely in Rust — `no_std`, b
   Default OVMF path: `C:\Program Files\qemu\share\edk2-x86_64-code.fd`
 - **`qemu-img`** on PATH (ships with QEMU)
 
+Verify the complete local setup with:
+
+```powershell
+.\scripts\check-prereqs.ps1
+```
+
+The required Limine UEFI binary is extracted automatically from the tracked
+archive when it is missing.
+
 ### Build
 
 ```powershell
@@ -62,6 +71,12 @@ cargo build --release
 
 # With timeout and log capture
 .\scripts\run-qemu.ps1 -TimeoutSeconds 30 -LogPath build/boot.log
+```
+
+Run the consolidated two-core GUI and boot-contract validation with:
+
+```powershell
+.\scripts\validate-poste14-gui.ps1
 ```
 
 `build/disk.img` (64 MiB FAT32) persists between runs. Delete it to get a fresh volume — it is auto-formatted on first boot.
@@ -110,15 +125,14 @@ Open the Terminal app from the launcher (bottom bar) or double-click its desktop
 - **Software renderer** — writes directly to the Limine linear framebuffer; no GPU required.
 - **FAT32** — 64 MiB raw `disk.img` over virtio-blk; LFN chains (up to 65-char names); auto-formatted on first boot. Desktop icon positions saved in `Desktop/DESKSTAT`.
 - **VFS** — static node tree plus FAT32 backend; all apps share `fs::open` / `fs::read` / `fs::write`.
-- **Networking** — virtio-net legacy PCI driver with RX/TX virtqueues and polling; higher-layer stack stubs ready to expand.
+- **Networking** — virtio-net with ARP, IPv4, ICMP, UDP, DNS, TCP, and HTTP support.
 - **User processes** — ELF64 loader maps PT_LOAD segments into ring-3 page tables; SYSCALL/SYSRET; SysV AMD64 ABI.
 - **Scheduler** — fixed-size task table, cooperative yield + PIT preemption, priority levels, sleep timers.
 
 ### Limitations
 
 - Runs in QEMU only (x86_64 + OVMF). Physical hardware not tested.
-- Single CPU core. No SMP.
-- No networking stack above the driver layer yet (ARP/IP planned for v0.2).
+- Application processors start and complete their bootstrap handshake in QEMU, but remain parked; scheduling is still BSP-only.
 - Ring-3 user programs are hand-assembled ELF stubs, not compiled from C/Rust.
 - No audio, no USB, no GPU acceleration.
 
@@ -129,9 +143,9 @@ Open the Terminal app from the launcher (bottom bar) or double-click its desktop
 ```
 kernel/src/
   main.rs            — entry point, boot phases, subsystem init
-  desktop.rs         — window manager, compositor, damage tracking
-  terminal.rs        — Terminal app + shell command dispatch
-  filemanager.rs     — File Manager app (browse, clipboard, FAT32)
+  desktop.rs + desktop/       — window manager, compositor, damage tracking
+  terminal.rs + terminal/     — Terminal state, rendering, and command groups
+  filemanager.rs + filemanager/ — File Manager model, views, and operations
   editor.rs          — Text Editor app
   notes.rs           — Notes scratchpad app
   calculator.rs      — Calculator app
@@ -155,6 +169,7 @@ kernel/src/
 scripts/
   run-qemu.ps1       — build + launch QEMU
   build-image.ps1    — assemble EFI boot image
+  validate-poste14-gui.ps1 — consolidated GUI contract validation
 docs/
   roadmap.md             — project roadmap
 ```

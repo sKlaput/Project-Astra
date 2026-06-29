@@ -46,8 +46,9 @@ Foundation for the entire future software ecosystem.
 
 ### 2. APIC + SMP
 Use modern CPUs properly.
-- Local APIC timer replaces PIT
-- Multi-core bring-up (AP startup, per-core stacks)
+- Local APIC timer calibration and switch probe complete; PIT remains the production tick source
+- AP discovery, startup, interrupt initialisation, identity handshake, and parking complete in QEMU
+- Next: per-core GDT/TSS/stacks and multicore scheduler participation
 - Enables background tasks and better responsiveness
 
 ### 3. Improved Scheduler

@@ -8,7 +8,7 @@ under QEMU with a graphical desktop.
 
 ---
 
-## What works (confirmed working as of May 2026)
+## What works (confirmed working as of June 2026)
 
 ### Boot & Core
 - UEFI boot via Limine on QEMU (x86_64)
@@ -53,7 +53,8 @@ under QEMU with a graphical desktop.
 ### Networking
 - virtio-net legacy PCI NIC driver
 - TX/RX virtqueues, MAC address detection, frame polling
-- `net` terminal command shows NIC status and frame counters
+- ARP, IPv4, ICMP, UDP, DNS, TCP, and HTTP client support
+- `net`, `ping`, `dns`, `http`, and `netcheck` terminal diagnostics
 
 ### User Processes
 - ELF64 binary loader — maps PT_LOAD segments into ring-3 page tables
@@ -64,13 +65,15 @@ under QEMU with a graphical desktop.
 - Fixed-size task table
 - Cooperative yield + PIT preemption
 - Priority levels, sleep timers
+- Limine SMP discovery and AP startup handshake validated with two QEMU CPUs
+- APs initialise CPU/interrupt state and park while multicore scheduling is developed
 
 ---
 
 ## Known limitations
 
 - Runs in QEMU only (no physical hardware testing yet)
-- Network stack is driver-level only — no TCP/IP yet
+- Scheduler execution remains BSP-only; application processors are parked after bootstrap
 - No audio
 - Single user, no permissions model
 - Font is a fixed 6×8 bitmap (no TrueType)
