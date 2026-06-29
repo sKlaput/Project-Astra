@@ -185,5 +185,5 @@ pub fn fmask() -> u64 {
 }
 
 pub fn syscall_entry_addr() -> u64 {
-    syscall_entry_stub as usize as u64
+    syscall_entry_stub as *const () as usize as u64
 }

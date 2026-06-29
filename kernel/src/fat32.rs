@@ -442,7 +442,6 @@ where
                     if seq_raw & 0x40 != 0 {
                         // First-on-disk = last part of name — start fresh
                         lfn_buf = [0u8; 64];
-                        lfn_len = 0;
                         lfn_seqs = 0;
                         lfn_expected = e[13]; // checksum
                     } else if e[13] != lfn_expected {

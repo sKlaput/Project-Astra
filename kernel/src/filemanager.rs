@@ -1008,7 +1008,6 @@ impl FileManagerApp {
     }
 
     fn mouse_click_this_pc(&mut self, rel_x: i32, rel_y: i32) -> AppAction {
-        let (_, ph) = self.preferred_size();
         let (tx, ty_t, tw, th) = Self::tile_rect(0, self.preferred_size().0);
         if rel_x >= tx as i32
             && rel_x < (tx + tw) as i32
@@ -1336,6 +1335,7 @@ impl FileManagerApp {
                         hkey!("R");
                         hsep!("=ren");
                     }
+                    let _ = hx;
                     let esc = "Esc=close";
                     let ex = cx + cw.saturating_sub(PAD_X + esc.len() * CHAR_W);
                     framebuffer::draw_text_at(ex, ty, esc, HINT_KEY);
@@ -1790,10 +1790,7 @@ impl FileManagerApp {
         if self.ctx.visible {
             let mw = self.ctx.width() as i32;
             let mh = self.ctx.height() as i32;
-            let (_, ph) = self.preferred_size();
-            let cw = ph as i32; // approximation not needed — use stored values
-                                // We stored ctx.x/y relative to the client area
-                                // Clamp the menu origin the same way render() does (simplified: just use ctx.x/y)
+            // We stored ctx.x/y relative to the client area.
             let mx = self.ctx.x;
             let my = self.ctx.y;
             if rel_x >= mx && rel_x < mx + mw && rel_y >= my && rel_y < my + mh {

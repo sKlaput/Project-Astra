@@ -14,7 +14,7 @@
 
 use crate::net::eth::ETH_HDR;
 use crate::net::ipv4::{IPV4_HDR, PROTO_UDP};
-use crate::net::{arp, config, eth, ipv4};
+use crate::net::{config, ipv4};
 use core::sync::atomic::{AtomicU16, Ordering};
 use spin::Mutex;
 

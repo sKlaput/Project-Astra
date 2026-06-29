@@ -26,7 +26,6 @@ use crate::imageviewer::ImageViewerApp;
 use crate::input::{self, Event, Key};
 use crate::logviewer::LogViewerApp;
 use crate::notes::NotesApp;
-use crate::rtc;
 use crate::settings::SettingsApp;
 use crate::snake::SnakeApp;
 use crate::sysmonitor::SysMonitorApp;

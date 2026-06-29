@@ -147,7 +147,7 @@ pub fn read_mouse_packet() -> Option<MousePacket> {
     }
     dy = -dy;
     // Scroll: 4-bit two's complement in lower nibble of 4th byte
-    let scroll = (scroll_raw as i8);
+    let scroll = scroll_raw as i8;
 
     Some(MousePacket {
         buttons,

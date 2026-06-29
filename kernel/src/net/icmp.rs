@@ -21,7 +21,7 @@
 use crate::net::eth::ETH_HDR;
 use crate::net::ipv4::{IPV4_HDR, PROTO_ICMP};
 use crate::net::{arp, config, eth, ipv4};
-use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use spin::Mutex;
 
 pub const ICMP_ECHO_REQUEST: u8 = 8;

@@ -11,7 +11,6 @@ pub use gdt::{
     kernel_code_selector, kernel_data_selector, ring3_code_selector, ring3_data_selector,
 };
 pub use halt::power_off;
-pub use interrupts::{sleep_ticks, timer_hz, uptime_ms, wait_until_ticks};
 
 pub fn init() {
     cpu::early_init();

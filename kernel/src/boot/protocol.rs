@@ -205,15 +205,6 @@ pub struct MpSummary {
 pub fn mp_summary() -> Option<MpSummary> {
     let response = MP_REQUEST.get_response()?;
     let cpus = response.cpus();
-    let flags = unsafe {
-        // ResponseFlags is bitflags-wrapped; read the raw u32 via repr(C) field offset 0.
-        // The struct layout in limine 0.5 places `flags: ResponseFlags` after the
-        // CPU count, but bitflags exposes `bits()`. Easier: just check via a const.
-        // We can't access flags() directly without the type — fall through to false.
-        let _ = response;
-        false
-    };
-    let _ = flags;
     Some(MpSummary {
         bsp_lapic_id: response.bsp_lapic_id(),
         cpu_count: cpus.len(),

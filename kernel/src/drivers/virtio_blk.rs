@@ -235,13 +235,11 @@ pub fn init() -> bool {
         }
     };
 
-    let io_base = unsafe {
-        match pci_io_base(bus, dev) {
-            Some(b) => b,
-            None => {
-                crate::serial::write_line("virtio-blk: BAR0 is not an I/O BAR");
-                return false;
-            }
+    let io_base = match pci_io_base(bus, dev) {
+        Some(b) => b,
+        None => {
+            crate::serial::write_line("virtio-blk: BAR0 is not an I/O BAR");
+            return false;
         }
     };
 

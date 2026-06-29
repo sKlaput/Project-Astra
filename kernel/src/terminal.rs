@@ -1121,16 +1121,13 @@ fn cmd_net() {
 
     // Show IP config if available
     if let Some(cfg) = crate::net::config::get() {
-        let ip = cfg.ip;
         let gw = cfg.gateway;
         let mut ibuf = [0u8; LINE_BUF];
-        let mut ip = ip;
         let pfx_ip = b"IP:  ";
         let mut pp = pfx_ip.len().min(LINE_BUF);
         ibuf[..pp].copy_from_slice(&pfx_ip[..pp]);
         let ip_arr = [cfg.ip[0], cfg.ip[1], cfg.ip[2], cfg.ip[3]];
         pp += write_ipv4(&mut ibuf[pp..], ip_arr);
-        let _ = ip; // suppress unused
         let s4 = unsafe { core::str::from_utf8_unchecked(&ibuf[..pp]) };
         t.push_str(s4, TEXT_NORM);
         let mut gbuf = [0u8; LINE_BUF];
@@ -1565,10 +1562,10 @@ fn cmd_http(args: &str) {
     }
 
     // Static response buffer (4 KiB — enough for most short responses)
-    static mut HTTP_BUF: [u8; 4096] = [0u8; 4096];
-    let resp_buf = unsafe { &mut HTTP_BUF };
+    static HTTP_BUF: Mutex<[u8; 4096]> = Mutex::new([0u8; 4096]);
+    let mut resp_buf = HTTP_BUF.lock();
 
-    match crate::net::http::get(host, port, path, resp_buf) {
+    match crate::net::http::get(host, port, path, &mut resp_buf[..]) {
         Err(e) => {
             let msg = match e {
                 crate::net::http::HttpError::NicNotReady => "http: NIC not ready",
@@ -1749,9 +1746,9 @@ fn cmd_netcheck(args: &str) {
         );
 
         // Check 3: HTTP
-        static mut NETCHECK_HTTP_BUF: [u8; 4096] = [0u8; 4096];
-        let http_result =
-            crate::net::http::get("example.com", 80, "/", unsafe { &mut NETCHECK_HTTP_BUF });
+        static NETCHECK_HTTP_BUF: Mutex<[u8; 4096]> = Mutex::new([0u8; 4096]);
+        let mut response = NETCHECK_HTTP_BUF.lock();
+        let http_result = crate::net::http::get("example.com", 80, "/", &mut response[..]);
         let http_ok = match http_result {
             Ok(n) => n > 0,
             Err(crate::net::http::HttpError::BufferTooSmall) => true,
