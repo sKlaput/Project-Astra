@@ -174,14 +174,46 @@ impl Driver for XhciDriver {
     }
 
     fn init(&self) -> Result<(), DriverError> {
-        // XHCI is typically found at PCI address 0:14.0 or similar
-        // For QEMU, we need to probe for XHCI controllers via PCI
+        // Use PCI enumeration to discover XHCI controller
+        init_xhci_from_pci()
+    }
+}
 
-        // For now, hardcode a stub implementation that reports success
-        // Full PCI enumeration would happen here in production
 
-        crate::serial::write_line("xhci: USB host controller driver initialized (stub)");
-        Ok(())
+/// Initialize XHCI driver by discovering controller via PCI
+pub fn init_xhci_from_pci() -> Result<(), DriverError> {
+    // Find XHCI controller on PCI bus
+    if let Some(device) = super::pci::find_xhci_controller() {
+        crate::serial::write_str("xhci: Found XHCI controller - Vendor 0x");
+        crate::serial::write_u32(device.vendor_id as u32);
+        crate::serial::write_str(", Device 0x");
+        crate::serial::write_u32(device.device_id as u32);
+        crate::serial::write_str(" at bus ");
+        crate::serial::write_u32(device.bus as u32);
+        crate::serial::write_str(", slot ");
+        crate::serial::write_u32(device.slot as u32);
+        crate::serial::write_str(", function ");
+        crate::serial::write_u32(device.function as u32);
+        crate::serial::write_line("");
+
+        // Get MMIO base address from BAR0
+        if let Some(mmio_base) = device.mmio_base_address() {
+            crate::serial::write_str("xhci: MMIO base address: 0x");
+            crate::serial::write_u64(mmio_base);
+            crate::serial::write_line("");
+
+            // TODO: Initialize XHCI controller at this address
+            // For now, just verify we can read the capability registers
+            let controller = XhciController::new(mmio_base);
+            crate::serial::write_line("xhci: Controller created successfully");
+            return Ok(());
+        } else {
+            crate::serial::write_line("xhci: BAR0 is not set or invalid");
+            return Err(DriverError::IoError);
+        }
+    } else {
+        crate::serial::write_line("xhci: No XHCI controller found on PCI bus");
+        return Err(DriverError::DeviceNotPresent);
     }
 }
 

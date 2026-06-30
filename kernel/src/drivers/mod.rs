@@ -12,6 +12,7 @@ pub mod mouse;
 pub mod virtio_blk;
 pub mod virtio_net;
 pub mod virtio_common;
+pub mod pci;
 pub mod xhci;
 pub mod usb_hid;
 
