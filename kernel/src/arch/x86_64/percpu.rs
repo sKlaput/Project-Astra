@@ -49,10 +49,18 @@ pub struct PerCpuData {
     
     /// Offset 56: Task IDs in queue (8 slots × 8 bytes = 64 bytes)
     pub queue_buf: [AtomicU64; QUEUE_CAP],
-    
+
+    // ========== Per-CPU scheduler state ==========
+    /// Saved RSP of the scheduler loop on this CPU (returned to on task exit/sleep/preempt).
+    pub scheduler_rsp: u64,
+
+    /// True while this CPU is inside a task dispatch (between the two context switches).
+    pub in_task_dispatch: bool,
+
+    pub _pad3: [u8; 7],
+
     // ========== Remaining space for future expansion ==========
-    /// Offset 120-4095: Reserved (3976 bytes available)
-    pub _padding: [u8; PERCPU_SIZE - 120],
+    pub _padding: [u8; PERCPU_SIZE - 136],
 }
 
 unsafe impl Send for PerCpuData {}
@@ -98,7 +106,10 @@ impl PerCpuData {
                 AtomicU64::new(0), AtomicU64::new(0),
                 AtomicU64::new(0), AtomicU64::new(0),
             ],
-            _padding: [0; PERCPU_SIZE - 120],
+            scheduler_rsp: 0,
+            in_task_dispatch: false,
+            _pad3: [0; 7],
+            _padding: [0; PERCPU_SIZE - 136],
         });
         
         let ptr = &mut *data as *mut PerCpuData;

@@ -23,9 +23,12 @@ pub fn sleep_current_until_tick(deadline_tick: u64) -> bool {
     table::TASK_TABLE[slot].wake_tick.store(wake_at, Ordering::Release);
     super::set_task_state(id, TaskState::Sleeping);
     stats::record_sleep();
-    super::CURRENT_TASK.store(0, Ordering::Release);
 
-    let sched_rsp = super::SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire);
+    let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
+    percpu.current_task = 0;
+    super::CURRENT_TASK.store(0, Ordering::Release);
+    let sched_rsp = percpu.scheduler_rsp;
+
     unsafe {
         context::context_switch(table::TASK_TABLE[slot].context_rsp.as_ptr(), sched_rsp);
     }
@@ -43,9 +46,12 @@ pub fn park_current_task() -> bool {
     super::set_task_state(id, TaskState::Sleeping);
     stats::record_park();
     stats::record_sleep();
-    super::CURRENT_TASK.store(0, Ordering::Release);
 
-    let sched_rsp = super::SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire);
+    let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
+    percpu.current_task = 0;
+    super::CURRENT_TASK.store(0, Ordering::Release);
+    let sched_rsp = percpu.scheduler_rsp;
+
     unsafe {
         context::context_switch(table::TASK_TABLE[slot].context_rsp.as_ptr(), sched_rsp);
     }

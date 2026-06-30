@@ -10,6 +10,9 @@ use crate::{
 
 static AP_BOOTSTRAP_ARMED: AtomicBool = AtomicBool::new(false);
 static AP_STARTED: AtomicUsize = AtomicUsize::new(0);
+
+/// Set to true by kmain after boot probes complete; APs spin here until then.
+pub static AP_SCHEDULER_RELEASE: AtomicBool = AtomicBool::new(false);
 const AP_EXTRA_VALID_BIT: u64 = 1u64 << 63;
 const AP_EXTRA_LAPIC_MISMATCH_BIT: u64 = 1u64 << 62;
 const AP_BOOT_WAIT_MS: u64 = 1500;
@@ -116,16 +119,15 @@ pub fn init() {
 }
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
-    // Phase 2.3: Complete AP bring-up by integrating with scheduler.
-    // Sequence:
-    // 1. Early CPU init (FPU/SSE, protections)
-    // 2. Get LAPIC ID
-    // 3. Load per-core GDT/TSS
-    // 4. Set GSBASE for per-core local storage
-    // 5. Load IDT
-    // 6. Initialize scheduler state
-    // 7. Enter scheduler loop (runs tasks)
-    
+    // Switch to the kernel page tables before touching anything that lives in
+    // the heap.  APs start with Limine's original CR3, which does not include
+    // the heap pages the BSP mapped after it activated its own page tables.
+    // Without this switch every Box::new() call triple-faults silently.
+    let kpml4 = crate::memory::paging::kernel_pml4_phys();
+    if kpml4 != 0 {
+        unsafe { crate::memory::paging::switch_cr3(kpml4); }
+    }
+
     cpu::early_init();
     let current_lapic = apic::lapic_id();
     
@@ -159,7 +161,11 @@ unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
         Ordering::SeqCst,
     );
 
-    // Phase 2.3: Instead of halting, enter the scheduler loop
-    // This allows APs to execute tasks from the shared ready queue
+    // Wait until BSP finishes boot probes before joining the scheduler.
+    // The probes run single-threaded and are not designed for SMP concurrency.
+    while !AP_SCHEDULER_RELEASE.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
+
     crate::scheduler::run()  // Never returns
 }

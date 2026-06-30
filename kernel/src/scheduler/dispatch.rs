@@ -253,14 +253,20 @@ pub fn enqueue_task_to_cpu(id: TaskId, cpu_id: u32) -> bool {
 pub fn dequeue_next_per_cpu() -> Option<TaskId> {
     unsafe {
         let percpu = crate::arch::x86_64::percpu::this_cpu();
-        
+
         // Try local queue first
         if let Some(task) = try_dequeue_local(percpu) {
             return Some(task);
         }
-        
+
         let cpu_id = unsafe { crate::arch::x86_64::percpu::cpu_id() };
-        unsafe { try_work_steal(cpu_id) }
+        if let Some(task) = unsafe { try_work_steal(cpu_id) } {
+            return Some(task);
+        }
+
+        // Fall back to the global ring buffer.  spawn_task* always enqueues
+        // there, so without this fallback nothing ever dispatches.
+        dequeue_next_inner()
     }
 }
 

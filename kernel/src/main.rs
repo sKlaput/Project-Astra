@@ -159,6 +159,9 @@ pub extern "C" fn kmain() -> ! {
         boot_probes::heap_debug_ladder();
     } }
 
+    // Boot probes are done — release APs into the scheduler loop.
+    arch::x86_64::smp::AP_SCHEDULER_RELEASE.store(true, core::sync::atomic::Ordering::Release);
+
     // Hand off to the desktop compositor event loop.
     // Falls back to scheduler::run_idle_loop if no framebuffer.
     desktop::run()

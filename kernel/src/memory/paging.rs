@@ -8,6 +8,18 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 const DEFAULT_HHDM_OFFSET: usize = 0xffff_8000_0000_0000;
 static HHDM_OFFSET_VALUE: AtomicUsize = AtomicUsize::new(DEFAULT_HHDM_OFFSET);
 
+/// Physical address of the kernel's PML4 — set once by the BSP after switching CR3.
+/// APs read this on entry to switch to the shared kernel page tables.
+static KERNEL_PML4_PHYS: AtomicUsize = AtomicUsize::new(0);
+
+pub fn set_kernel_pml4_phys(phys: usize) {
+    KERNEL_PML4_PHYS.store(phys, Ordering::Release);
+}
+
+pub fn kernel_pml4_phys() -> usize {
+    KERNEL_PML4_PHYS.load(Ordering::Acquire)
+}
+
 /// Lower-half canonical user virtual space limit (exclusive).
 ///
 /// Valid user-space addresses satisfy: `addr < USER_SPACE_LIMIT`.

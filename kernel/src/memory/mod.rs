@@ -122,6 +122,9 @@ fn setup_paging_and_hhdm() {
     // If execution reaches here the CR3 switch succeeded.
     crate::serial::write_line("paging: [PAGING-OK] new page tables active");
 
+    // Record the kernel PML4 so APs can switch to it on entry.
+    paging::set_kernel_pml4_phys(paging::current_cr3_phys());
+
     let heap_base = kernel_virt + KERNEL_MAP_SIZE;
     heap::init_virtual_heap(heap_base);
 }

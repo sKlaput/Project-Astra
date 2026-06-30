@@ -182,7 +182,7 @@ fn user_task_trampoline() {
 // ============================================================================
 
 pub fn current_task() -> Option<TaskId> {
-    let raw = CURRENT_TASK.load(Ordering::Acquire);
+    let raw = unsafe { crate::arch::x86_64::percpu::this_cpu().current_task as u64 };
     if raw == 0 {
         None
     } else {
@@ -229,10 +229,14 @@ pub fn exit_task(id: TaskId) {
     stats::record_exit();
     CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
     let slot = table_slot(id.0);
+    let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
+    percpu.current_task = 0;
     clear_task_state(id);
 
-    if IN_TASK_DISPATCH.load(Ordering::Acquire) {
-        let sched_rsp = SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire);
+    if percpu.in_task_dispatch {
+        let sched_rsp = percpu.scheduler_rsp;
+        percpu.in_task_dispatch = false;
+        IN_TASK_DISPATCH.store(false, Ordering::Release);
         unsafe {
             context::context_switch(TASK_TABLE[slot].context_rsp.as_ptr(), sched_rsp);
         }
@@ -247,12 +251,16 @@ pub fn exit_task(id: TaskId) {
 pub fn abort_current_user_task_from_fault() -> ! {
     unsafe { crate::memory::paging::switch_cr3(kernel_pml4_phys()) };
 
+    let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
     if let Some(id) = current_task() {
         stats::record_exit();
         CURRENT_TASK.compare_exchange(id.0, 0, Ordering::AcqRel, Ordering::Acquire).ok();
+        percpu.current_task = 0;
         clear_task_state(id);
     }
-    let sched_rsp = SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire);
+    let sched_rsp = percpu.scheduler_rsp;
+    percpu.in_task_dispatch = false;
+    IN_TASK_DISPATCH.store(false, Ordering::Release);
     if sched_rsp != 0 {
         unsafe { context::context_restore_to(sched_rsp) }
     } else {
@@ -571,22 +579,29 @@ pub fn dispatch_once() -> bool {
         stats::record_dispatch();
         set_task_state(task, TaskState::Running);
         CURRENT_TASK.store(task.0, Ordering::Release);
+        let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
+        percpu.current_task = task.0 as usize;
 
         let task_rsp = TASK_TABLE[slot].context_rsp.load(Ordering::Acquire);
         let prio = TASK_TABLE[slot].priority.load(Ordering::Relaxed);
         TASK_TABLE[slot].slice.store(dispatch::slice_for_priority(prio), Ordering::Relaxed);
         let was_preempted = TASK_TABLE[slot].preempted.swap(false, Ordering::Relaxed);
+        percpu.in_task_dispatch = true;
         IN_TASK_DISPATCH.store(true, Ordering::Release);
-        
+
         if was_preempted {
             unsafe {
-                context::context_switch_to_preempted(SCHEDULER_CONTEXT_RSP.as_ptr(), task_rsp);
+                context::context_switch_to_preempted(&mut percpu.scheduler_rsp, task_rsp);
             }
         } else {
             unsafe {
-                context::context_switch(SCHEDULER_CONTEXT_RSP.as_ptr(), task_rsp);
+                context::context_switch(&mut percpu.scheduler_rsp, task_rsp);
             }
         }
+        // Returned here after the task yielded, slept, or was preempted.
+        let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
+        percpu.in_task_dispatch = false;
+        percpu.current_task = 0;
         IN_TASK_DISPATCH.store(false, Ordering::Release);
 
         if task_state(task) == TaskState::Running {
@@ -793,10 +808,11 @@ pub unsafe extern "C" fn timer_irq_inner(task_rsp: u64) -> u64 {
     crate::arch::x86_64::interrupts::increment_timer_ticks();
     tick();
 
-    if !IN_TASK_DISPATCH.load(Ordering::Acquire) {
+    let percpu = unsafe { crate::arch::x86_64::percpu::this_cpu() };
+    if !percpu.in_task_dispatch {
         return 0;
     }
-    let current = CURRENT_TASK.load(Ordering::Acquire);
+    let current = percpu.current_task as u64;
     if current == 0 {
         return 0;
     }
@@ -815,13 +831,15 @@ pub unsafe extern "C" fn timer_irq_inner(task_rsp: u64) -> u64 {
 
     TASK_TABLE[slot].context_rsp.store(task_rsp, Ordering::Release);
     TASK_TABLE[slot].preempted.store(true, Ordering::Relaxed);
+    percpu.current_task = 0;
     CURRENT_TASK.store(0, Ordering::Release);
     set_task_state(id, TaskState::Ready);
     dispatch::enqueue_task_inner(id);
+    percpu.in_task_dispatch = false;
     IN_TASK_DISPATCH.store(false, Ordering::Release);
     stats::record_preempt();
 
-    SCHEDULER_CONTEXT_RSP.load(Ordering::Acquire)
+    percpu.scheduler_rsp
 }
 
 // ============================================================================
