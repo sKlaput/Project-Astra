@@ -1,0 +1,224 @@
+================================================================================
+ASTRA OS - QUICK TESTING REFERENCE CARD
+================================================================================
+
+AFTER EVERY CHANGE: Run this sequence (5-10 minutes total)
+
+================================================================================
+STEP 1: COMPILE CHECK (30 seconds)
+================================================================================
+
+Command:
+  cargo check
+
+Expected:
+  ✅ Finished `dev` profile [uncompiled] target(s) in X.XXs
+  
+If error:
+  ❌ Fix compilation errors and retry
+
+
+================================================================================
+STEP 2: RELEASE BUILD (5 seconds)
+================================================================================
+
+Command:
+  cargo build --release
+
+Expected:
+  ✅ Finished `release` profile [optimized] target(s) in X.XXs
+
+If error:
+  ❌ Check for linking errors, may need full rebuild:
+    cargo clean && cargo build --release
+
+
+================================================================================
+STEP 3: BOOT TEST (10 seconds in QEMU)
+================================================================================
+
+Command:
+  qemu-system-x86_64 -drive format=raw,file=disk.img -m 2G -enable-kvm
+
+Expected:
+  ✅ OS boots
+  ✅ No kernel panics
+  ✅ Desktop appears (taskbar + icons)
+  ✅ Mouse cursor responds
+  ✅ Terminal input field works
+
+If fails:
+  ❌ For serial output (debugging):
+    qemu-system-x86_64 -drive format=raw,file=disk.img -m 2G -enable-kvm -serial stdio
+
+
+================================================================================
+STEP 4: FUNCTIONALITY TEST (3-5 minutes in QEMU)
+================================================================================
+
+In QEMU terminal, run these commands:
+
+Test 1 - Network:
+  $ ping 8.8.8.8
+  Expected: Shows responses with timing
+
+Test 2 - System:
+  $ ps
+  Expected: Shows process list
+
+Test 3 - Files:
+  $ ls /
+  Expected: Shows root directory
+
+Test 4 - Network Full Stack:
+  $ netcheck
+  Expected: 3/3 checks passed ✓
+
+Test 5 - GUI Applications:
+  Click File Manager, Text Editor, Calculator in launcher
+  Expected: Each launches and responds to input
+
+If any fail:
+  ❌ Note which component failed
+  ❌ Check if you modified code in that area
+  ❌ Look for error messages in QEMU terminal
+
+
+================================================================================
+STEP 5: REGRESSION TEST (1 minute)
+================================================================================
+
+Verify old features still work after your changes:
+
+✅ Mouse Movement
+  - Move mouse around
+  - Should be smooth and responsive
+
+✅ Window Operations
+  - Click and drag window title bar
+  - Window should move smoothly
+  - Resize by dragging edges
+
+✅ Terminal I/O
+  - Type commands
+  - Output displays correctly
+  - Ctrl+C works
+
+✅ File System
+  - Can create files: echo test > /tmp/test
+  - Can delete files
+  - Files persist after reboot
+
+✅ Persistence
+  - Create file: echo data > /tmp/persist
+  - Shutdown QEMU (Ctrl+C)
+  - Reboot QEMU
+  - Verify file exists: cat /tmp/persist
+
+If any regression:
+  ❌ Your change broke something
+  ❌ Revert changes and investigate
+
+
+================================================================================
+ALL TESTS PASS? → YOU'RE GOOD TO COMMIT!
+================================================================================
+
+Summary for committing:
+  ✅ Compilation passes
+  ✅ Release build succeeds
+  ✅ OS boots without panic
+  ✅ Features work as intended
+  ✅ No regressions introduced
+  ✅ All tests pass
+
+Commit command:
+  git add -A
+  git commit -m "Your commit message"
+  git log --oneline -1  (verify commit)
+
+
+================================================================================
+QUICK FIXES FOR COMMON ISSUES
+================================================================================
+
+Issue: OS won't boot
+  → cargo clean && cargo build --release
+  → Run with -serial stdio to see error message
+
+Issue: Compilation error
+  → Check error message: cargo check 2>&1 | head -20
+  → Look for: "module not found", "type mismatch", "cannot find"
+
+Issue: App crashes
+  → Which app crashed?
+  → Did you modify that app's code?
+  → If not, check shared modules: scheduler, syscall, memory
+
+Issue: Network doesn't work
+  → Test: ping 8.8.8.8
+  → Did you modify net/, scheduler/, or memory/?
+  → Run netcheck to see if all layers work
+
+Issue: GUI unresponsive
+  → Did you modify desktop module?
+  → Check terminal (typing should still work)
+  → Try launching another app to verify system responsive
+
+
+================================================================================
+ENVIRONMENT SETUP (One-time)
+================================================================================
+
+If QEMU not working:
+  Windows: Install QEMU from https://www.qemu.org/download/
+  Linux:   apt-get install qemu-system-x86
+  macOS:   brew install qemu
+
+Verify QEMU works:
+  qemu-system-x86_64 --version
+
+
+================================================================================
+TESTING ADVANCED FEATURES (v0.3)
+================================================================================
+
+Memory Protection:
+  - Stress test with many apps: Launch Terminal, File Manager, Text Editor, Calculator simultaneously
+  - Fill memory: dd if=/dev/zero of=/tmp/bigfile bs=1M count=100
+  - Expected: No segfaults
+
+Multicore (Future):
+  - Boot with 4 CPUs: qemu-system-x86_64 ... -smp 4
+  - Launch 8+ CPU-intensive tasks
+  - Expected: Distributed across cores
+
+Network Layers:
+  - ping 8.8.8.8 (tests layer 3)
+  - netcheck (tests layer 2-4)
+  - HTTP works (tests application layer)
+
+
+================================================================================
+COMMIT MESSAGE FORMAT
+================================================================================
+
+feat: [Feature name] - brief description
+
+[Detailed explanation of changes]
+
+Testing:
+✅ Compilation passed
+✅ Boot test passed
+✅ Feature works as intended
+✅ No regressions detected
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
+================================================================================
+TOTAL TIME: 5-10 minutes per change
+================================================================================
+
+If ALL tests pass → Commit with confidence!
+If ANY test fails → Fix issues before committing
