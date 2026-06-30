@@ -22,7 +22,6 @@ pub enum VfsError {
 #[derive(Debug, Clone, Copy)]
 pub struct Mount {
     pub name: &'static str,
-    pub root: NodeId,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -93,18 +92,12 @@ pub fn mount_root() -> Result<Mount, VfsError> {
         HELLO_BUF_LEN.store(src.len(), Ordering::Release);
     }
     ROOT_MOUNTED.store(true, Ordering::Release);
-    Ok(Mount {
-        name: "rootfs",
-        root: ROOT_NODE_ID,
-    })
+    Ok(Mount { name: "rootfs" })
 }
 
 pub fn root_mount() -> Result<Mount, VfsError> {
     if ROOT_MOUNTED.load(Ordering::Acquire) {
-        Ok(Mount {
-            name: "rootfs",
-            root: ROOT_NODE_ID,
-        })
+        Ok(Mount { name: "rootfs" })
     } else {
         Err(VfsError::NotMounted)
     }
@@ -421,7 +414,6 @@ impl DynFile {
 #[derive(Clone, Copy)]
 pub struct DynEntry {
     pub id: NodeId,
-    pub parent: NodeId,
     pub name: [u8; 32],
     pub nlen: usize,
     pub is_dir: bool,
@@ -451,7 +443,6 @@ pub fn dyn_list_dir(parent_id: NodeId, out: &mut [DynEntry]) -> usize {
         };
         out[n] = DynEntry {
             id: f.id,
-            parent: f.parent,
             name: f.name,
             nlen: f.nlen,
             is_dir: f.is_dir,
@@ -798,7 +789,6 @@ pub fn fat32_list_dir(fat_cluster: u32, out: &mut [DynEntry], start: usize) -> u
         let id = fat32_alloc_id(de.cluster, de.size, de.is_dir, fat_cluster, name64, nlen);
         out[n] = DynEntry {
             id,
-            parent: 0, // not used for FAT32 entries in the File Manager
             name: name32,
             nlen,
             is_dir: de.is_dir,

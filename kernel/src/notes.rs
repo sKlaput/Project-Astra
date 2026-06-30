@@ -74,8 +74,7 @@ pub struct NotesApp {
     lines: [usize; MAX_LINES], // byte offsets of line starts
     line_count: usize,
     save_state: SaveState,
-    flash_ticks: u8,       // countdown for "Saved" flash
-    fat32_id: Option<u16>, // FAT32 node id once discovered
+    flash_ticks: u8, // countdown for "Saved" flash
 }
 
 impl NotesApp {
@@ -89,7 +88,6 @@ impl NotesApp {
             line_count: 1,
             save_state: SaveState::Clean,
             flash_ticks: 0,
-            fat32_id: None,
         };
         app.lines[0] = 0;
         app.try_load();

@@ -12,7 +12,7 @@
 //   [8..]    data
 //
 // To send a ping:
-//   icmp::send_echo_request(dst_ip, id, seq)
+//   icmp::send_echo_request_to(dst_ip, dst_mac, id, seq)
 //
 // On RX, call icmp::handle_packet() with the ICMP payload.
 // Poll icmp::poll_reply() to see if a reply arrived.
@@ -20,7 +20,7 @@
 
 use crate::net::eth::ETH_HDR;
 use crate::net::ipv4::{IPV4_HDR, PROTO_ICMP};
-use crate::net::{arp, config, eth, ipv4};
+use crate::net::{arp, config, ipv4};
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use spin::Mutex;
 
@@ -155,13 +155,6 @@ pub fn send_echo_request_to(dst_ip: [u8; 4], dst_mac: [u8; 6], id: u16, seq: u16
     ok
 }
 
-/// Send an ICMP echo request, resolving ARP from cache (or falling back to broadcast).
-/// Prefer `send_echo_request_to` when you have already resolved the MAC.
-pub fn send_echo_request(dst_ip: [u8; 4], id: u16, seq: u16) -> bool {
-    let dst_mac = arp::resolve_with_retry(dst_ip, 900, 3).unwrap_or(eth::BROADCAST_MAC);
-    send_echo_request_to(dst_ip, dst_mac, id, seq)
-}
-
 // ── RX ────────────────────────────────────────────────────────────────────────
 
 /// Handle an incoming ICMP packet.
@@ -255,11 +248,4 @@ fn send_echo_reply(dst_ip: [u8; 4], id: u16, seq: u16, data: &[u8]) {
 /// Drain at most one reply from the queue. Returns None when queue is empty.
 pub fn poll_reply() -> Option<PingReply> {
     REPLY_QUEUE.lock().pop()
-}
-
-pub fn stats() -> (u32, u32) {
-    (
-        PINGS_SENT.load(Ordering::Relaxed),
-        PINGS_RECV.load(Ordering::Relaxed),
-    )
 }

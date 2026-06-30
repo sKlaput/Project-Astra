@@ -6,7 +6,6 @@
 //
 // API
 //   `poll_events(buf)` — fills `buf` with pending events. Non-blocking.
-//   `mouse_pos()`      — current absolute cursor position.
 // ---------------------------------------------------------------------------
 
 use crate::drivers::keyboard;
@@ -43,13 +42,6 @@ static CTRL_HELD: AtomicBool = AtomicBool::new(false);
 static MOUSE_X: AtomicI32 = AtomicI32::new(512);
 static MOUSE_Y: AtomicI32 = AtomicI32::new(384);
 static MOUSE_BUTTONS: AtomicU8 = AtomicU8::new(0);
-
-pub fn mouse_pos() -> (i32, i32) {
-    (
-        MOUSE_X.load(Ordering::Relaxed),
-        MOUSE_Y.load(Ordering::Relaxed),
-    )
-}
 
 // ── Event type ────────────────────────────────────────────────────────────────
 

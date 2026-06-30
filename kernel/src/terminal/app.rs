@@ -34,13 +34,8 @@ impl App for TerminalApp {
         Some(INPUT_REGION_H)
     }
 
-    fn render_input_region(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
-        render_input_line(cx, cy, cw, ch);
-    }
-
     fn handle_key(&mut self, key: crate::input::Key) -> AppAction {
         match handle_key(key) {
-            TermAction::Close => AppAction::Close,
             TermAction::RedrawAll => AppAction::RedrawAll,
             TermAction::RedrawInput => AppAction::RedrawInput,
             TermAction::Nothing => AppAction::Nothing,

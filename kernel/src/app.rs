@@ -48,17 +48,10 @@ pub trait App {
 
     /// Height of the partial-redraw strip at the bottom of the client area.
     /// Returns `None` by default (no partial region).
-    /// When `Some(h)` is returned the compositor may clear and re-render only
-    /// that strip instead of the full client area (e.g. terminal input line).
+    /// When `Some(h)` is returned the compositor may damage only that strip
+    /// instead of the full client area (e.g. terminal input line).
     fn input_region_height(&self) -> Option<usize> {
         None
-    }
-
-    /// Render only the bottom input strip.
-    /// Only called when `input_region_height()` returns `Some`.
-    /// Default falls back to a full render.
-    fn render_input_region(&self, cx: usize, cy: usize, cw: usize, ch: usize) {
-        self.render(cx, cy, cw, ch);
     }
 
     /// Handle a keyboard event and return what the compositor should do.

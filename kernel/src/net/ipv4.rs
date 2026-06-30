@@ -25,10 +25,7 @@ pub const PROTO_UDP: u8 = 17;
 pub struct Ipv4Header {
     pub ihl: u8, // in bytes (always 20 for us)
     pub total_len: u16,
-    pub id: u16,
-    pub ttl: u8,
     pub protocol: u8,
-    pub checksum: u16,
     pub src: [u8; 4],
     pub dst: [u8; 4],
 }
@@ -49,10 +46,7 @@ impl Ipv4Header {
         Some(Ipv4Header {
             ihl: ihl_bytes as u8,
             total_len: u16::from_be_bytes([buf[2], buf[3]]),
-            id: u16::from_be_bytes([buf[4], buf[5]]),
-            ttl: buf[8],
             protocol: buf[9],
-            checksum: u16::from_be_bytes([buf[10], buf[11]]),
             src: buf[12..16].try_into().ok()?,
             dst: buf[16..20].try_into().ok()?,
         })

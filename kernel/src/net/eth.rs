@@ -13,15 +13,12 @@ pub const ETH_ARP: u16 = 0x0806;
 pub const ETH_IPV4: u16 = 0x0800;
 
 pub const ETH_HDR: usize = 14;
-pub const MAC_LEN: usize = 6;
 pub const BROADCAST_MAC: [u8; 6] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
 
 // ── Parsed Ethernet frame header ──────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]
 pub struct EthHeader {
-    pub dst: [u8; 6],
-    pub src: [u8; 6],
     pub etype: u16, // host byte order
 }
 
@@ -32,8 +29,6 @@ impl EthHeader {
             return None;
         }
         Some(EthHeader {
-            dst: frame[0..6].try_into().ok()?,
-            src: frame[6..12].try_into().ok()?,
             etype: u16::from_be_bytes([frame[12], frame[13]]),
         })
     }

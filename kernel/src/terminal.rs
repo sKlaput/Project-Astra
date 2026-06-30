@@ -165,7 +165,6 @@ pub enum TermAction {
     Nothing,
     RedrawAll,
     RedrawInput,
-    Close,
 }
 
 /// Height of the input-line region at the bottom of client area.
@@ -230,53 +229,6 @@ pub fn render(cx: usize, cy: usize, cw: usize, ch: usize) {
             framebuffer::draw_text_scaled(inner_x, history_y + row * CHAR_H, s, ln.col, SCALE);
         }
     }
-
-    // Separator line
-    framebuffer::fill_rect(cx, input_y - 4, cw, 1, SEPARATOR);
-
-    // Prompt
-    let prompt_cols = PROMPT.len().min(max_cols);
-    framebuffer::draw_text_scaled(inner_x, input_y, &PROMPT[..prompt_cols], PROMPT_COL, SCALE);
-
-    // User input — scroll window keeps cursor visible
-    let text_x = inner_x + prompt_cols * CHAR_W;
-    let input_cols = max_cols.saturating_sub(prompt_cols);
-    if t.input_len > 0 && input_cols > 0 {
-        let scroll_start = if t.cursor_pos >= input_cols {
-            t.cursor_pos + 1 - input_cols
-        } else {
-            0
-        };
-        let shown_end = (scroll_start + input_cols).min(t.input_len);
-        if shown_end > scroll_start {
-            let s = unsafe { core::str::from_utf8_unchecked(&t.input[scroll_start..shown_end]) };
-            framebuffer::draw_text_scaled(text_x, input_y, s, INPUT_COL, SCALE);
-        }
-    }
-
-    // Block cursor at cursor_pos
-    let input_cols_c = max_cols.saturating_sub(prompt_cols);
-    let scroll_c = if t.cursor_pos >= input_cols_c {
-        t.cursor_pos + 1 - input_cols_c
-    } else {
-        0
-    };
-    let cur_x = text_x + (t.cursor_pos - scroll_c) * CHAR_W;
-    framebuffer::fill_rect(cur_x, input_y, CHAR_W - 2, CHAR_H, CURSOR_COL);
-}
-
-/// Render only the input-line region (separator + prompt + input + cursor).
-/// The compositor should clear the input sub-rect before calling this.
-pub fn render_input_line(cx: usize, cy: usize, cw: usize, ch: usize) {
-    let t = TERM.lock();
-    let inner_x = cx + PAD_X;
-    let inner_w = cw.saturating_sub(PAD_X * 2);
-    let max_cols = inner_w / CHAR_W;
-    if max_cols == 0 {
-        return;
-    }
-
-    let input_y = cy + ch.saturating_sub(CHAR_H + 10);
 
     // Separator line
     framebuffer::fill_rect(cx, input_y - 4, cw, 1, SEPARATOR);

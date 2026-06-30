@@ -92,10 +92,6 @@ pub mod driver {
         crate::drivers::virtio_net::is_ready()
     }
 
-    pub fn link_up() -> bool {
-        crate::drivers::virtio_net::link_up()
-    }
-
     pub fn submit_tx_frame(frame: &[u8]) -> Result<usize, NetError> {
         if frame.is_empty() {
             return Err(NetError::Invalid);

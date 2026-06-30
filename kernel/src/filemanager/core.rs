@@ -31,21 +31,6 @@ pub struct FileManagerApp {
 }
 
 impl FileManagerApp {
-    /// Open File Manager with the "New File" prompt already showing.
-    pub fn new_file() -> Self {
-        let mut app = Self::new();
-        // Enter Files view first so the prompt is shown in context
-        app.view = FmView::Files;
-        let target = crate::fs::resolve_node_id(app.cwd.as_str()).unwrap_or(0);
-        app.prompt = FmPrompt {
-            kind: PromptKind::New,
-            buf: [0u8; 32],
-            len: 0,
-            target,
-        };
-        app
-    }
-
     /// Open File Manager with the Files view rooted inside a specific FAT32 folder.
     /// `cluster` is the FAT32 cluster of the folder, `name` is its display name.
     pub fn open_dir(cluster: u32, name: &[u8]) -> Self {
@@ -88,20 +73,6 @@ impl FileManagerApp {
             app.fat32_stack_depth = 1;
         }
         app.load_dir();
-        app
-    }
-
-    /// Open File Manager with the "New Folder" prompt already showing.
-    pub fn new_folder() -> Self {
-        let mut app = Self::new();
-        app.view = FmView::Files;
-        let target = crate::fs::resolve_node_id(app.cwd.as_str()).unwrap_or(0);
-        app.prompt = FmPrompt {
-            kind: PromptKind::Mkdir,
-            buf: [0u8; 32],
-            len: 0,
-            target,
-        };
         app
     }
 
@@ -212,7 +183,6 @@ impl FileManagerApp {
             let fat_cluster = self.fat32_cluster;
             let mut fat_out = [fs::DynEntry {
                 id: 0,
-                parent: 0,
                 name: [0u8; 32],
                 nlen: 0,
                 is_dir: false,
@@ -289,7 +259,6 @@ impl FileManagerApp {
         // Dynamic files and folders in this directory
         let mut dyn_out = [fs::DynEntry {
             id: 0,
-            parent: 0,
             name: [0u8; 32],
             nlen: 0,
             is_dir: false,
@@ -319,7 +288,6 @@ impl FileManagerApp {
         if fat_cluster != 0 {
             let mut fat_out = [fs::DynEntry {
                 id: 0,
-                parent: 0,
                 name: [0u8; 32],
                 nlen: 0,
                 is_dir: false,

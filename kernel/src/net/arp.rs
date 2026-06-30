@@ -106,10 +106,6 @@ impl ArpCache {
             age: crate::arch::x86_64::interrupts::uptime_ms(),
         };
     }
-
-    fn all(&self) -> &[ArpEntry; CACHE_CAP] {
-        &self.entries
-    }
 }
 
 static ARP_CACHE: Mutex<ArpCache> = Mutex::new(ArpCache::new());
@@ -123,17 +119,6 @@ pub fn cache_lookup(ip: [u8; 4]) -> Option<[u8; 6]> {
 
 pub fn cache_insert(ip: [u8; 4], mac: [u8; 6]) {
     ARP_CACHE.lock().insert(ip, mac);
-}
-
-/// Iterate the ARP cache, calling `f` for each valid entry.
-pub fn cache_iter<F: FnMut([u8; 4], [u8; 6])>(mut f: F) {
-    let now = crate::arch::x86_64::interrupts::uptime_ms();
-    let cache = ARP_CACHE.lock();
-    for e in cache.all() {
-        if e.is_valid() && now.wrapping_sub(e.age) <= CACHE_TTL_MS {
-            f(e.ip, e.mac);
-        }
-    }
 }
 
 /// Resolve `target_ip` to a MAC address with ARP retries.

@@ -12,20 +12,6 @@ pub struct DirEntry {
     pub cluster: u32,
 }
 
-impl DirEntry {
-    pub const EMPTY: Self = DirEntry {
-        name: [0u8; 64],
-        name_len: 0,
-        is_dir: false,
-        size: 0,
-        cluster: 0,
-    };
-
-    pub fn name_str(&self) -> &str {
-        core::str::from_utf8(&self.name[..self.name_len]).unwrap_or("?")
-    }
-}
-
 /// Parse a raw 8.3 directory entry (32 bytes at `e`) and fill a `DirEntry`.
 /// Returns `None` if the entry is empty, deleted, LFN, or a volume label.
 fn parse_dirent(e: &[u8]) -> Option<DirEntry> {
@@ -320,23 +306,3 @@ pub fn find_in_dir(dir_cluster: u32, name: &[u8]) -> Option<DirEntry> {
     result
 }
 
-/// Walk a FAT32 path (e.g. "/docs/readme.txt") and return the final entry.
-/// Path must start with '/'.
-pub fn resolve_path(path: &str) -> Option<DirEntry> {
-    if !is_mounted() {
-        return None;
-    }
-    let mut cluster = ROOT_CLUS.load(Ordering::Relaxed);
-    let segs: &[&str] = &[];
-    let _ = segs; // silence lint
-
-    let mut last_de: Option<DirEntry> = None;
-
-    for seg in path.split('/').filter(|s| !s.is_empty()) {
-        let nb = seg.as_bytes();
-        let de = find_in_dir(cluster, nb)?;
-        cluster = de.cluster;
-        last_de = Some(de);
-    }
-    last_de
-}

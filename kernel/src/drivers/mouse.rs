@@ -88,10 +88,6 @@ pub struct MousePacket {
 /// Whether the IntelliMouse (scroll wheel, 4-byte) protocol is active.
 static INTELLIMOUSE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-pub fn has_scroll_wheel() -> bool {
-    INTELLIMOUSE.load(Ordering::Relaxed)
-}
-
 const PKT_BUF_SIZE: usize = 32;
 /// 4 bytes per slot: status, dx, dy, scroll
 static PKT_BUF: [AtomicU8; PKT_BUF_SIZE * 4] = {
