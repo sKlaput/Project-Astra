@@ -222,3 +222,25 @@ TOTAL TIME: 5-10 minutes per change
 
 If ALL tests pass → Commit with confidence!
 If ANY test fails → Fix issues before committing
+
+
+================================================================================
+IMPORTANT: QEMU Network Notes
+================================================================================
+
+QEMU slirp (default user-mode networking) limitations:
+
+❌ CANNOT ping external IPs like 8.8.8.8
+   (ICMP/PING not supported through slirp)
+
+✅ CAN ping QEMU-internal addresses:
+   - 10.0.2.1 (gateway)
+   - 10.0.2.2 (gateway)
+   - 10.0.2.3 (DNS server)
+
+✅ CAN use DNS, HTTP, TCP, UDP
+   (netcheck uses these and works perfectly)
+
+CORRECT TEST COMMANDS:
+  ping 10.0.2.2     ← Use this instead of 8.8.8.8
+  netcheck          ← Uses DNS + HTTP (both work)
