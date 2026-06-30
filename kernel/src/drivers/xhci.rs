@@ -342,6 +342,13 @@ pub fn init_xhci_from_pci() -> Result<(), DriverError> {
             crate::serial::write_str("xhci: Found ");
             crate::serial::write_u32(connected);
             crate::serial::write_line(" connected device(s)");
+
+            // Enumerate USB devices on all ports
+            crate::serial::write_line("xhci: Starting device enumeration...");
+            let enumerated = super::xhci_enumeration::enumerate_all_devices(4);
+            crate::serial::write_str("xhci: Enumerated ");
+            crate::serial::write_u32(enumerated);
+            crate::serial::write_line(" device(s) successfully");
             
             return Ok(());
         } else {

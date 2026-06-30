@@ -14,6 +14,8 @@ pub mod virtio_net;
 pub mod virtio_common;
 pub mod pci;
 pub mod xhci;
+pub mod xhci_rings;
+pub mod xhci_enumeration;
 pub mod usb_hid;
 pub mod usb_protocol;
 
