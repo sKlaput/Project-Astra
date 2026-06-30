@@ -18,3 +18,10 @@
 /tools/vgmstream-win64.zip
 /tools/vgmstream/
 /tools/wwiser/
+
+# Local-only project notes
+STATUS.md
+TESTING_GUIDE.md
+TESTING_PROTOCOL.txt
+TESTING_TEMPLATE.md
+V03_RELEASE_NOTES.md
