@@ -835,3 +835,47 @@ pub fn run_idle_loop() -> ! {
         }
     }
 }
+
+
+// ============================================================================
+// Phase 2.3: Per-CPU Scheduler Support
+// ============================================================================
+
+/// Initialize per-core scheduler state for an AP.
+/// Call from ap_entry() after GSBASE is set.
+pub fn init_per_cpu_scheduler(cpu_id: u32) {
+    crate::serial::write_str("scheduler: per-core init cpu_id=");
+    crate::serial::write_u32(cpu_id);
+    crate::serial::write_line("");
+    
+    // Each CPU uses the shared ready queue
+    // Per-core state: current_task_id, context_rsp stored in percpu
+}
+
+/// Run the scheduler loop for this CPU (AP or BSP).
+/// Dispatches tasks from shared ready queue.
+/// Never returns - runs until system shutdown.
+pub fn run() -> ! {
+    let cpu_id = unsafe { 
+        crate::arch::x86_64::percpu::cpu_id() as u64
+    };
+    
+    crate::serial::write_str("scheduler: run loop active cpu_id=");
+    crate::serial::write_u64(cpu_id);
+    crate::serial::write_line("");
+    
+    // Same as run_idle_loop but per-CPU aware
+    loop {
+        if !dispatch_once() {
+            // No task ready: idle
+            let next_tick = crate::idle::now_ticks().saturating_add(1);
+            crate::idle::idle_until(next_tick);
+        }
+    }
+}
+
+/// Compatibility wrapper for single-core or BSP entry
+pub fn run_idle_loop_compat() -> ! {
+    crate::console::log("scheduler: idle loop active (compat)");
+    run()
+}

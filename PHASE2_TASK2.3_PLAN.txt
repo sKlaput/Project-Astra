@@ -1,0 +1,186 @@
+# Phase 2, Task 2.3: AP Startup Integration - Architecture
+
+## Objective
+Complete the Application Processor (AP) bring-up sequence by integrating:
+- Per-core GDT/TSS (Phase 2.1)
+- Per-core local storage (Phase 2.2)
+- Per-core scheduler state
+- Per-core interrupt handlers
+
+## Current State After 2.1-2.2
+✓ Per-core GDT/TSS loaded
+✓ GSBASE MSR set for per-core data
+✓ PerCpuData structure ready
+✓ Each AP can access its own CPU ID
+
+Missing:
+✗ Per-core scheduler state
+✗ Per-core idle task
+✗ Per-core run queue
+✗ Per-core interrupt hooks
+
+## Design: AP Startup Integration Flow
+
+### Current ap_entry() Sequence
+1. cpu::early_init() - FPU/SSE, protections
+2. Get current LAPIC ID
+3. gdt::init_ap_per_core() - Load GDT/TSS
+4. cpu::set_gsbase() - Enable per-core data
+5. interrupts::init_ap_interrupts() - Load IDT
+6. Publish handshake to BSP
+7. halt::halt_loop() ← PROBLEM: AP just halts!
+
+### New ap_entry() Sequence (2.3)
+1. cpu::early_init()
+2. Get LAPIC ID
+3. gdt::init_ap_per_core()
+4. cpu::set_gsbase()
+5. interrupts::init_ap_interrupts()
+6. **scheduler::init_per_cpu_scheduler()** ← NEW
+7. **scheduler::spawn_idle_task()** ← NEW
+8. **scheduler::run()** ← Enter scheduler loop instead of halt
+9. Publish handshake
+10. Run tasks until shutdown
+
+## Implementation Steps
+
+### Step 1: Extend PerCpuData (percpu.rs)
+Add scheduler-related fields:
+```rust
+pub struct PerCpuData {
+    // ... existing fields ...
+    pub current_task_id: u32,          // Current task ID
+    pub scheduler_initialized: bool,   // Flag for completion
+}
+```
+
+### Step 2: Create per-CPU idle task (smp.rs / scheduler)
+- Each AP spawns one idle task
+- Idle task: infinite loop, yields CPU
+- Runs when no other task ready
+
+### Step 3: Modify scheduler initialization
+Add per_cpu_init() function that:
+- Sets up per-core data structures
+- Marks scheduler as ready
+- Enables per-core timer tick
+
+### Step 4: Integrate idle task spawning
+During AP init:
+```rust
+unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
+    // ... existing init ...
+    
+    // NEW: Initialize per-core scheduler
+    let cpu_id = percpu::cpu_id();
+    scheduler::init_per_cpu_scheduler(cpu_id);
+    
+    // NEW: Spawn and start idle task
+    let idle_task = scheduler::spawn_idle_task(cpu_id);
+    
+    // Signal readiness
+    AP_STARTED.fetch_add(1, Ordering::Relaxed);
+    
+    // NEW: Enter scheduler loop (never returns)
+    scheduler::run();
+}
+```
+
+### Step 5: Modify scheduler::run()
+Make it per-CPU aware:
+- Each CPU maintains its own run queue
+- Idle task always available
+- Timer tick increments per-CPU counter
+
+## Code Changes Required
+
+### Files to Modify:
+1. **kernel/src/arch/x86_64/smp.rs**
+   - Update ap_entry() to call scheduler init
+   - Remove halt::halt_loop()
+   - Add scheduler::run()
+
+2. **kernel/src/scheduler/mod.rs**
+   - Add init_per_cpu_scheduler(cpu_id)
+   - Add spawn_idle_task(cpu_id)
+   - Modify run() for per-core awareness
+   - Add per_core_current_task() accessor
+
+3. **kernel/src/arch/x86_64/percpu.rs**
+   - Add scheduler-related fields to PerCpuData
+   - Add getter/setter for current task
+
+### Files to Review:
+1. **kernel/src/scheduler/dispatch.rs**
+   - May need per-core run queue support
+
+2. **kernel/src/scheduler/context.rs**
+   - Context switching should work per-CPU
+
+## Expected Behavior
+
+### Single-Core (BSP only)
+- Scheduler runs as before
+- No change in behavior
+
+### Dual-Core (BSP + 1 AP)
+- BSP runs scheduler normally
+- AP initializes per-core scheduler
+- Both CPUs run tasks independently
+- No synchronization needed for "current task"
+
+### Serial Output Expected
+```
+gdt: kernel GDT + TSS + ring-3 descriptors active
+percpu: BSP per-core data initialized cpu_id=0
+gdt: multicore initialization for 2 CPUs
+gdt: per-core AP GDT loaded lapic=1
+percpu: AP per-core data initialized cpu_id=1
+scheduler: per-core idle task spawned cpu_id=1
+smp: APs started=1 expected=1 OK
+smp: AP handshakes=1 expected=1 OK
+scheduler: BSP running (1 CPU)
+scheduler: AP running (cpu_id=1) [both active]
+```
+
+## Safety & Correctness
+
+### Per-CPU Isolation
+- Each CPU has its own current_task
+- No lock needed for "current"
+- Scheduler lock only protects shared run queue
+
+### Idle Task Design
+- Prevents busy-waiting
+- Allows CPU to sleep/halt if needed
+- Must handle wake-up from other CPUs
+
+### Error Handling
+- AP fails init → timeout, BSP logs error
+- Scheduler init fails → AP panics
+- Task spawn fails → AP halts
+
+## Integration with Phase 3
+
+Phase 2.3 completion enables Phase 3:
+✓ Per-core scheduler state ready
+✓ Per-core task execution working
+✓ Foundation for load balancing
+✓ Ready for work-stealing scheduler
+
+## Estimated Time
+2-3 hours:
+- 30 min: Understand current scheduler flow
+- 45 min: Extend PerCpuData and add fields
+- 45 min: Implement per-core scheduler init
+- 30 min: Modify ap_entry() and scheduler::run()
+- 15 min: Testing and debugging
+
+## Success Criteria
+✓ Kernel compiles with 0 errors
+✓ Dual-core boot completes
+✓ Both APs reach scheduler::run()
+✓ Both CPUs run tasks independently
+✓ No panics or deadlocks
+✓ Scheduler output shows 2 CPUs active
+✓ Task execution visible on both cores

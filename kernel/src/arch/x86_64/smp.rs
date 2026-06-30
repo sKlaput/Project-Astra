@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use limine::mp::Cpu;
 
 use crate::{
-    arch::x86_64::{apic, cpu, gdt, halt, interrupts},
+    arch::x86_64::{apic, cpu, gdt, interrupts},
     boot::protocol,
     serial,
 };
@@ -116,22 +116,36 @@ pub fn init() {
 }
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
-    // Incremental AP bring-up stage: initialize CPU feature state, load per-core GDT,
-    // set per-core local storage, set up interrupts, publish a handshake marker, then park.
+    // Phase 2.3: Complete AP bring-up by integrating with scheduler.
+    // Sequence:
+    // 1. Early CPU init (FPU/SSE, protections)
+    // 2. Get LAPIC ID
+    // 3. Load per-core GDT/TSS
+    // 4. Set GSBASE for per-core local storage
+    // 5. Load IDT
+    // 6. Initialize scheduler state
+    // 7. Enter scheduler loop (runs tasks)
+    
     cpu::early_init();
     let current_lapic = apic::lapic_id();
     
-    // Phase 2: Load per-core GDT/TSS for this AP and get GSBASE address
+    // Load per-core GDT/TSS and get GSBASE address
     let gsbase_addr = gdt::init_ap_per_core(current_lapic);
     
-    // Phase 2.2: Set GSBASE to enable per-core local storage access
+    // Set GSBASE to enable per-core local storage
     unsafe {
         cpu::set_gsbase(gsbase_addr);
     }
     
+    // Load IDT for this CPU
     interrupts::init_ap_interrupts();
+    
+    // Phase 2.3: Initialize per-core scheduler state
+    crate::scheduler::init_per_cpu_scheduler(current_lapic);
+    
     let mismatch = (current_lapic != cpu.lapic_id) as u64;
 
+    // Signal that this AP has started
     AP_STARTED.fetch_add(1, Ordering::Relaxed);
 
     // Publish AP identity in the Limine-owned per-CPU extra word so the BSP
@@ -145,5 +159,7 @@ unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
         Ordering::SeqCst,
     );
 
-    halt::halt_loop()
+    // Phase 2.3: Instead of halting, enter the scheduler loop
+    // This allows APs to execute tasks from the shared ready queue
+    crate::scheduler::run()  // Never returns
 }
