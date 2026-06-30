@@ -36,6 +36,79 @@ const XHCI_PS_PED: u32 = 0x02;                // Port Enabled/Disabled
 const XHCI_PS_PR: u32 = 0x10;                 // Port Reset
 const XHCI_PS_PP: u32 = 0x200;                // Port Power
 
+
+/// XHCI Command Ring
+pub struct CommandRing {
+    /// Virtual address of ring buffer
+    ring_buffer: u64,
+    /// Enqueue pointer (producer)
+    enqueue_ptr: u32,
+    /// Dequeue pointer (consumer)
+    dequeue_ptr: u32,
+    /// Cycle state (toggles on wrap-around)
+    cycle_state: bool,
+}
+
+/// XHCI Event Ring
+pub struct EventRing {
+    /// Virtual address of event ring buffer
+    ring_buffer: u64,
+    /// Dequeue pointer
+    dequeue_ptr: u32,
+    /// Cycle state
+    cycle_state: bool,
+    /// Interrupter number
+    interrupter: u8,
+}
+
+/// XHCI Endpoint Ring (for transfers)
+pub struct EndpointRing {
+    /// Virtual address of ring buffer
+    ring_buffer: u64,
+    /// Enqueue pointer
+    enqueue_ptr: u32,
+    /// Dequeue pointer
+    dequeue_ptr: u32,
+    /// Cycle state
+    cycle_state: bool,
+    /// Endpoint number
+    endpoint: u8,
+}
+
+impl CommandRing {
+    pub fn new() -> Self {
+        Self {
+            ring_buffer: 0,
+            enqueue_ptr: 0,
+            dequeue_ptr: 0,
+            cycle_state: true,
+        }
+    }
+}
+
+impl EventRing {
+    pub fn new(interrupter: u8) -> Self {
+        Self {
+            ring_buffer: 0,
+            dequeue_ptr: 0,
+            cycle_state: true,
+            interrupter,
+        }
+    }
+}
+
+impl EndpointRing {
+    pub fn new(endpoint: u8) -> Self {
+        Self {
+            ring_buffer: 0,
+            enqueue_ptr: 0,
+            dequeue_ptr: 0,
+            cycle_state: true,
+            endpoint,
+        }
+    }
+}
+
 /// XHCI host controller state
 pub struct XhciController {
     /// PCI BAR0 address (MMIO)
@@ -130,6 +203,53 @@ impl XhciController {
         }
     }
 
+
+    /// Initialize command ring
+    fn init_command_ring(&mut self) -> bool {
+        // TODO: Allocate command ring buffer (64 KB aligned)
+        // TODO: Write ring address to CRCR register
+        crate::serial::write_line("xhci: Command ring initialized (stub)");
+        true
+    }
+
+    /// Initialize event ring
+    fn init_event_ring(&mut self) -> bool {
+        // TODO: Allocate event ring buffer
+        // TODO: Setup event ring segment table
+        // TODO: Write ERST pointer and size to registers
+        crate::serial::write_line("xhci: Event ring initialized (stub)");
+        true
+    }
+
+    /// Enable XHCI interrupts
+    fn enable_interrupts(&mut self) -> bool {
+        // TODO: Setup interrupt handler
+        // TODO: Enable XHCI interrupt in command register
+        crate::serial::write_line("xhci: Interrupts enabled (stub)");
+        true
+    }
+
+    /// Initialize XHCI data structures
+    fn initialize_data_structures(&mut self) -> bool {
+        // Initialize command ring
+        if !self.init_command_ring() {
+            return false;
+        }
+
+        // Initialize event rings
+        if !self.init_event_ring() {
+            return false;
+        }
+
+        // Enable interrupts
+        if !self.enable_interrupts() {
+            return false;
+        }
+
+        crate::serial::write_line("xhci: All data structures initialized");
+        true
+    }
+
     /// Detect connected USB devices by checking port status
     pub fn detect_devices(&self) -> u32 {
         let mut connected = 0;
@@ -202,10 +322,27 @@ pub fn init_xhci_from_pci() -> Result<(), DriverError> {
             crate::serial::write_u64(mmio_base);
             crate::serial::write_line("");
 
-            // TODO: Initialize XHCI controller at this address
-            // For now, just verify we can read the capability registers
-            let controller = XhciController::new(mmio_base);
-            crate::serial::write_line("xhci: Controller created successfully");
+            // Initialize XHCI controller at this address
+            let mut controller = XhciController::new(mmio_base);
+            
+            // Reset host controller
+            if controller.host_controller_reset().is_err() {
+                crate::serial::write_line("xhci: Host controller reset failed");
+                return Err(DriverError::IoError);
+            }
+            
+            // Initialize data structures (command ring, event ring, etc.)
+            if !controller.initialize_data_structures() {
+                crate::serial::write_line("xhci: Data structure initialization failed");
+                return Err(DriverError::IoError);
+            }
+            
+            // Detect connected devices
+            let connected = controller.detect_devices();
+            crate::serial::write_str("xhci: Found ");
+            crate::serial::write_u32(connected);
+            crate::serial::write_line(" connected device(s)");
+            
             return Ok(());
         } else {
             crate::serial::write_line("xhci: BAR0 is not set or invalid");

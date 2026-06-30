@@ -15,6 +15,7 @@ pub mod virtio_common;
 pub mod pci;
 pub mod xhci;
 pub mod usb_hid;
+pub mod usb_protocol;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
