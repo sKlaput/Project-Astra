@@ -2,6 +2,7 @@ pub mod frame_allocator;
 pub mod heap;
 pub mod paging;
 pub mod user_frames;
+pub mod protection;
 
 pub fn init_from_boot() {
     if let Some(offset) = crate::boot::protocol::hhdm_offset() {

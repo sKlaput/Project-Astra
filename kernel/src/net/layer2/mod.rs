@@ -8,5 +8,3 @@
 pub mod config;
 pub mod eth;
 
-pub use config::*;
-pub use eth::*;

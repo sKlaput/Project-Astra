@@ -15,12 +15,16 @@ pub mod layer4;
 /// Application Layer — DNS and HTTP
 pub mod application;
 
-// ── Re-export commonly used types from each layer for convenience ─────────────
-
-pub use layer2::{config, eth};
-pub use layer3::{arp, icmp, ipv4};
-pub use layer4::{tcp, udp};
-pub use application::{dns, http};
+// Flat re-exports maintain backward-compatible paths (crate::net::eth, etc.)
+pub use layer2::config;
+pub use layer2::eth;
+pub use layer3::arp;
+pub use layer3::icmp;
+pub use layer3::ipv4;
+pub use layer4::tcp;
+pub use layer4::udp;
+pub use application::dns;
+pub use application::http;
 
 // ── Public init ───────────────────────────────────────────────────────────────
 

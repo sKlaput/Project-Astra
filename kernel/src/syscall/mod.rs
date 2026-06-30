@@ -3,8 +3,8 @@ pub mod handlers;
 pub mod memory;
 
 pub use authz::{
-    SecurityAuthzSnapshot, AUTHZ_REASON_ALLOW, AUTHZ_REASON_DENY_DEFAULT,
-    AUTHZ_REASON_DENY_PRIVILEGED_GROUP, AUTHZ_REASON_DENY_UNKNOWN_SYSCALL,
+    SecurityAuthzSnapshot, AUTHZ_REASON_DENY_DEFAULT, AUTHZ_REASON_DENY_PRIVILEGED_GROUP,
+    AUTHZ_REASON_DENY_UNKNOWN_SYSCALL,
 };
 
 /// Unknown syscall sentinel.

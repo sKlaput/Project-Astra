@@ -1,9 +1,5 @@
-//! Common virtio driver utilities
-//!
-//! Shared code for virtio device drivers:
-//! - Port I/O helpers
-//! - PCI bus scanning and configuration
-//! - Common virtio protocol constants
+//! Common virtio driver utilities — shared port I/O, PCI helpers, and protocol constants.
+#![allow(dead_code)]
 
 // ── Port I/O Helpers ──────────────────────────────────────────────────────────
 
