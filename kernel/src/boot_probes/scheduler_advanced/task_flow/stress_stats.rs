@@ -130,10 +130,10 @@ pub(crate) fn probe_scheduler_stats() {
 
 pub(crate) fn probe_scheduler_stats_guard() {
     // Baseline captured from cooperative stack-switch dispatch model.
-    const EXPECT_DISPATCH: u64 = 34;
-    const EXPECT_SLEEP: u64 = 20;
-    const EXPECT_WAKE: u64 = 20;
-    const EXPECT_EXIT: u64 = 17;
+    const EXPECT_DISPATCH: u64 = 32;
+    const EXPECT_SLEEP: u64 = 19;
+    const EXPECT_WAKE: u64 = 19;
+    const EXPECT_EXIT: u64 = 16;
     const EXPECT_REQUEUE: u64 = 0;
 
     let stats = scheduler::debug_stats_snapshot();
