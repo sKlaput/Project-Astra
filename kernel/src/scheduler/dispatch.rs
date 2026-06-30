@@ -202,3 +202,129 @@ pub fn aging_enabled() -> bool {
 pub fn aging_ticks_per_level() -> u64 {
     AGING_TICKS_PER_LEVEL.load(Ordering::Relaxed)
 }
+
+
+// ============================================================================
+// Phase 3: Per-Core Task Queue with Work-Stealing
+// ============================================================================
+
+/// Enqueue task to a specific CPU's queue
+pub fn enqueue_task_to_cpu(id: TaskId, cpu_id: u32) -> bool {
+    unsafe {
+        // Get target CPU's per-core data via LAPIC ID
+        // Note: In Phase 3, we'll use a CPU ID mapping array
+        // For now, use GSBASE if same CPU, else would need global access
+        
+        // Simplified: for same CPU enqueue
+        let percpu = crate::arch::x86_64::percpu::this_cpu();
+        if percpu.cpu_id != cpu_id {
+            // Different CPU - would need per-CPU struct array
+            // Deferred to Phase 3 refinement
+            return false;
+        }
+        
+        let tail = percpu.queue_tail.load(Ordering::Relaxed);
+        let head = percpu.queue_head.load(Ordering::Relaxed);
+        let cap = crate::arch::x86_64::percpu::queue_capacity() as u32;
+        
+        // Check if queue full
+        if tail.wrapping_sub(head) >= cap {
+            return false;
+        }
+        
+        // Add to queue
+        let slot = (tail % cap) as usize;
+        crate::arch::x86_64::percpu::queue_set(slot, id.0);
+        
+        // Record enqueue tick for aging
+        table::TASK_TABLE[table::table_slot(id.0)]
+            .enqueue_tick
+            .store(super::SCHED_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
+        
+        // Update tail with Release ordering
+        percpu.queue_tail.store(tail.wrapping_add(1), Ordering::Release);
+        super::IDLE_DECISION_SEEN.store(false, Ordering::Relaxed);
+        
+        true
+    }
+}
+
+/// Dequeue highest-priority task from current CPU's queue (per-core)
+pub fn dequeue_next_per_cpu() -> Option<TaskId> {
+    unsafe {
+        let percpu = crate::arch::x86_64::percpu::this_cpu();
+        
+        // Try local queue first
+        if let Some(task) = try_dequeue_local(percpu) {
+            return Some(task);
+        }
+        
+        // Local queue empty - would do work-stealing here in full Phase 3
+        // For now, just return None
+        None
+    }
+}
+
+/// Try to dequeue from local CPU's queue
+unsafe fn try_dequeue_local(percpu: &mut crate::arch::x86_64::percpu::PerCpuData) -> Option<TaskId> {
+    let head = percpu.queue_head.load(Ordering::Relaxed);
+    let tail = percpu.queue_tail.load(Ordering::Acquire);
+    let now = super::SCHED_TICKS.load(Ordering::Relaxed);
+    let cap = crate::arch::x86_64::percpu::queue_capacity() as u32;
+    
+    if head == tail {
+        return None;  // Queue empty
+    }
+    
+    // Find highest-priority task (same logic as global queue)
+    let mut best_idx = head;
+    let mut best_prio = 255u8;
+    
+    let mut i = head;
+    while i != tail {
+        let slot_idx = (i % cap) as usize;
+        let task_id = percpu.queue_buf[slot_idx].load(Ordering::Relaxed);
+        
+        let task_slot = table::table_slot(task_id);
+        let base = table::TASK_TABLE[task_slot].priority.load(Ordering::Relaxed);
+        
+        let effective = if AGING_ENABLED.load(Ordering::Relaxed) {
+            let enq = table::TASK_TABLE[task_slot].enqueue_tick.load(Ordering::Relaxed);
+            let waited = now.saturating_sub(enq);
+            let interval = AGING_TICKS_PER_LEVEL.load(Ordering::Relaxed).max(1);
+            let boost = (waited / interval).min(255) as u8;
+            if boost > 0 {
+                super::stats::record_aging_boost(waited);
+            }
+            base.saturating_sub(boost)
+        } else {
+            base
+        };
+        
+        if effective < best_prio {
+            best_prio = effective;
+            best_idx = i;
+        }
+        
+        i = i.wrapping_add(1);
+    }
+    
+    // Get the best task
+    let best_slot = (best_idx % cap) as usize;
+    let best_id = percpu.queue_buf[best_slot].load(Ordering::Relaxed);
+    
+    // Compact: shift entries after best_idx one slot toward head
+    let new_tail = tail.wrapping_sub(1);
+    let mut j = best_idx;
+    while j != new_tail {
+        let next_slot = ((j.wrapping_add(1)) % cap) as usize;
+        let current_slot = (j % cap) as usize;
+        let next_val = percpu.queue_buf[next_slot].load(Ordering::Relaxed);
+        percpu.queue_buf[current_slot].store(next_val, Ordering::Relaxed);
+        j = j.wrapping_add(1);
+    }
+    
+    percpu.queue_tail.store(new_tail, Ordering::Release);
+    
+    Some(TaskId(best_id))
+}
