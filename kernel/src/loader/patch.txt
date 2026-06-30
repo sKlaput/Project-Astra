@@ -1,0 +1,7 @@
+After line:  if !is_user_range(p_vaddr, p_memsz) {
+               return Err(LoadError::UnsupportedSegmentLayout);
+             }
+
+Insert:
+        // Validate segment does not overlap with guard regions
+        validate_no_guard_overlap(p_vaddr, virt_end)?;

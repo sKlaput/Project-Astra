@@ -1,10 +1,5 @@
-//! Memory Protection Subsystem
-//!
-//! Implements per-process memory protection features:
-//! - Guard pages (stack overflow detection, heap protection)
-//! - Ring-3 isolation enforcement
-//! - Address space layout validation
-//! - Privilege boundary enforcement
+//! Memory protection infrastructure — guard pages, address space layout, W^X enforcement.
+#![allow(dead_code)]
 
 use crate::memory::paging::{PageTableFlags, is_user_virt, is_kernel_virt};
 use core::sync::atomic::{AtomicUsize, Ordering};

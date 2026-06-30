@@ -1,0 +1,182 @@
+================================================================================
+V0.3 COMPLETE IMPLEMENTATION PLAN
+================================================================================
+
+GOAL: Implement ALL v0.3 features for production-quality stability & hardware support
+
+PRIORITY ORDER (High Impact First):
+
+================================================================================
+PHASE 1: MEMORY PROTECTION ENFORCEMENT (Critical Foundation)
+================================================================================
+
+Task 1.1: Enforce Guard Pages in ELF Loader (2 hours)
+  - Add validation in loader/elf.rs to reject segments overlapping guard regions
+  - Ensure no writable+executable segments (W^X already done)
+  - Test with various ELF binaries
+
+Task 1.2: Per-Process Page Table Isolation (3 hours)
+  - Verify each process has isolated PML4
+  - Ensure kernel pages not mapped in user space (except HHDM)
+  - Add validation in scheduler context switch
+
+Task 1.3: SMEP/SMAP Enforcement (1 hour)
+  - Verify SMEP enabled (CR4.SMEP = 1)
+  - Verify SMAP enabled (CR4.SMAP = 1)
+  - Add compile-time assertions for protections
+
+Status: NOT STARTED
+Est. Time: 6 hours
+Impact: Foundation for all other isolation work
+
+================================================================================
+PHASE 2: APIC + SMP INFRASTRUCTURE (Hardware Enablement)
+================================================================================
+
+Task 2.1: Per-Core GDT/TSS Allocation (2 hours)
+  - Allocate per-core GDT (one per AP)
+  - Allocate per-core TSS (one per AP)
+  - Set up per-core kernel stacks
+
+Task 2.2: Per-Core Data Structures (2 hours)
+  - Create per-core local state (current task, scheduler queue, etc.)
+  - Use x86_64 GS segment for core-local data access
+  - Initialize during AP startup
+
+Task 2.3: AP Startup with Per-Core Setup (2 hours)
+  - Load AP-specific GDT/TSS during trampoline
+  - Set up per-core kernel stack
+  - Initialize per-core scheduler state
+
+Status: NOT STARTED
+Est. Time: 6 hours
+Impact: Enables true multicore operation
+
+================================================================================
+PHASE 3: MULTICORE SCHEDULER (Parallelism)
+================================================================================
+
+Task 3.1: Per-Core Ready Queues (2 hours)
+  - Create separate ready queue for each core
+  - Modify dequeue_next to check local queue first
+  - Implement work-stealing if queue empty
+
+Task 3.2: Better Preemption (1 hour)
+  - Implement quantum-based preemption (100ms slices)
+  - Add preemption on local APIC timer
+  - Fairness across cores
+
+Task 3.3: Priority Inheritance (2 hours)
+  - Complete partial stub for priority inheritance
+  - Handle lock contention priority boost
+  - Test with synchronization primitives
+
+Task 3.4: Load Balancing (2 hours)
+  - Distribute tasks across cores
+  - Migrate tasks if cores unbalanced
+  - Measure fairness metrics
+
+Status: NOT STARTED
+Est. Time: 7 hours
+Impact: True parallelism, better responsiveness
+
+================================================================================
+PHASE 4: USB HID SUPPORT (User-Facing Hardware)
+================================================================================
+
+Task 4.1: XHCI Host Controller Driver (4 hours)
+  - PCI discovery of XHCI controllers
+  - Memory-mapped register access
+  - Event ring setup and processing
+  - Command ring for device communication
+
+Task 4.2: USB Keyboard Driver (2 hours)
+  - HID keyboard descriptor parsing
+  - Interrupt transfer setup
+  - Key event to scancodes conversion
+
+Task 4.3: USB Mouse Driver (2 hours)
+  - HID mouse descriptor parsing
+  - Interrupt transfer for movement/clicks
+  - Integration with desktop input system
+
+Status: NOT STARTED
+Est. Time: 8 hours
+Impact: Real hardware keyboard/mouse support
+
+================================================================================
+PHASE 5: REAL HARDWARE TESTING (Validation)
+================================================================================
+
+Task 5.1: Boot Validation (1 hour)
+  - Test on physical x86_64 systems
+  - Verify BIOS/UEFI compatibility
+  - Check memory map detection
+
+Task 5.2: Timer/Interrupt Behavior (2 hours)
+  - Validate timer accuracy on real hardware
+  - Test interrupt delivery and handling
+  - Fix hardware-specific quirks
+
+Task 5.3: Framebuffer Compatibility (1 hour)
+  - Test on various graphics cards
+  - Handle VESA/UEFI framebuffer modes
+  - Fix timing issues
+
+Task 5.4: Performance Profiling (2 hours)
+  - Measure scheduler latency on real hardware
+  - Profile memory access patterns
+  - Identify bottlenecks
+
+Status: NOT STARTED
+Est. Time: 6 hours
+Impact: Production hardware support
+
+================================================================================
+TOTAL TIME ESTIMATE: ~33 hours
+================================================================================
+
+RECOMMENDED WORK SESSION BREAKDOWN:
+
+Day 1 (6 hours): PHASE 1 - Memory Protection Enforcement
+  - Implement guard page validation in loader
+  - Verify process isolation
+  - Test with various ELF binaries
+
+Day 2 (6 hours): PHASE 2 - APIC + SMP Infrastructure
+  - Set up per-core GDT/TSS
+  - Initialize per-core data structures
+  - Test AP startup
+
+Day 3 (7 hours): PHASE 3 - Multicore Scheduler
+  - Implement per-core ready queues
+  - Add preemption and fairness
+  - Test load balancing
+
+Day 4 (8 hours): PHASE 4 - USB HID
+  - XHCI driver implementation
+  - USB keyboard/mouse support
+  - Integration testing
+
+Day 5 (6 hours): PHASE 5 - Real Hardware Testing
+  - Boot on real systems
+  - Fix hardware-specific issues
+  - Performance validation
+
+================================================================================
+SUCCESS CRITERIA
+================================================================================
+
+PHASE 1: Guard pages enforced, no process can corrupt kernel memory
+PHASE 2: OS runs on all detected cores simultaneously
+PHASE 3: Fair task distribution, no core idle if tasks exist
+PHASE 4: USB keyboard/mouse work on real hardware
+PHASE 5: OS boots and runs on multiple physical x86_64 systems
+
+FINAL: v0.3 complete and production-ready for hardware deployment
+
+================================================================================
+STARTING PHASE 1 NOW: Memory Protection Enforcement
+================================================================================
+
+Next: Implement guard page validation in ELF loader
