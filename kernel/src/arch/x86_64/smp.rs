@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use limine::mp::Cpu;
 
 use crate::{
-    arch::x86_64::{apic, cpu, halt, interrupts},
+    arch::x86_64::{apic, cpu, gdt, halt, interrupts},
     boot::protocol,
     serial,
 };
@@ -31,7 +31,11 @@ pub fn init() {
 
     let bsp_lapic_id = mp.bsp_lapic_id();
     let cpus = mp.cpus();
+    let cpu_count = cpus.len();
     let mut ap_count = 0usize;
+
+    // Phase 2: Initialize multi-core GDT system with detected CPU count
+    gdt::init_multicore_gdt(cpu_count);
 
     for cpu in cpus {
         if cpu.lapic_id == bsp_lapic_id {
@@ -112,11 +116,15 @@ pub fn init() {
 }
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
-    // Incremental AP bring-up stage: initialize CPU feature state, publish a
-    // handshake marker, then park. Higher-level per-core init comes next.
+    // Incremental AP bring-up stage: initialize CPU feature state, load per-core GDT,
+    // set up interrupts, publish a handshake marker, then park.
     cpu::early_init();
-    interrupts::init_ap_interrupts();
     let current_lapic = apic::lapic_id();
+    
+    // Phase 2: Load per-core GDT/TSS for this AP
+    gdt::init_ap_per_core(current_lapic);
+    
+    interrupts::init_ap_interrupts();
     let mismatch = (current_lapic != cpu.lapic_id) as u64;
 
     AP_STARTED.fetch_add(1, Ordering::Relaxed);

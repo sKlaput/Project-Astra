@@ -1,0 +1,53 @@
+================================================================================
+PHASE 2: APIC + SMP INFRASTRUCTURE - IMPLEMENTATION STARTED
+================================================================================
+
+OBJECTIVE: Enable true multicore operation with per-core setup
+
+PHASE 2 CONSISTS OF:
+  Task 2.1: Per-Core GDT/TSS Allocation (2 hours)
+  Task 2.2: Per-Core Data Structures (2 hours)
+  Task 2.3: AP Startup Integration (2 hours)
+
+CURRENT STATUS: Starting implementation
+COMMITS PUSHED: Phase 1 complete (87c0621)
+READY: Yes, all prerequisites met
+
+================================================================================
+PHASE 2 ARCHITECTURE OVERVIEW
+================================================================================
+
+Current State (v0.3 Phase 1):
+  - AP discovery and startup implemented
+  - Single shared GDT/TSS (kernel-only)
+  - No per-core local storage
+  - Scheduler not multicore-aware
+
+Phase 2 Will Add:
+  - Per-core GDT (separate for each CPU)
+  - Per-core TSS (task state segment per core)
+  - Per-core kernel stacks
+  - Per-core local state (via GS segment)
+  - AP registration with per-core setup
+
+Result:
+  - Each core has independent execution context
+  - Scheduler can manage per-core queues
+  - Ready for Phase 3 (multicore scheduling)
+
+================================================================================
+STARTING TASK 2.1: Per-Core GDT/TSS Allocation
+================================================================================
+
+Current GDT/TSS structure to examine:
+  - arch/x86_64/gdt.rs (GDT implementation)
+  - arch/x86_64/smp.rs (AP startup code)
+  - scheduler/mod.rs (scheduler core-local needs)
+
+Plan:
+  1. Understand current GDT/TSS setup
+  2. Design per-core allocation scheme
+  3. Implement per-core GDT/TSS allocation
+  4. Test with QEMU multicore boot
+
+Let's examine the current architecture...

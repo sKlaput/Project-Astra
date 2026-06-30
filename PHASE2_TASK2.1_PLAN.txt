@@ -1,0 +1,53 @@
+# Phase 2 Task 2.1: Per-Core GDT/TSS Allocation Implementation Plan
+
+## Overview
+Transform the single-core GDT system into a multi-core capable system that allocates separate GDT/TSS/stacks for each detected CPU.
+
+## Current State
+- Single GDT/TSS loaded by gdt::init() during boot
+- Uses Once<> pattern with static GDT_STATE
+- AP initialization in smp::init() never calls gdt::init_ap() - THIS IS A BUG
+- Each CPU currently shares the same GDT
+
+## Implementation Strategy
+1. Create per-core GDT manager with pre-allocated memory
+2. Detect CPU count from Limine MP response during smp::init()
+3. Pre-allocate per-core GDT/TSS/stacks for all CPUs
+4. Load BSP GDT during normal boot sequence
+5. Load AP GDT during AP entry in ap_entry()
+
+## Key Design Points
+- Each CPU gets 32 KB of stacks (4K double-fault + 8K privilege + 16K kernel)
+- Support up to 256 CPUs (typical x86-64 limit)
+- Use LAPIC ID as primary key for CPU identification
+- Maintain backward compatibility with single-core code paths
+- Implement lazy allocation to minimize boot-time overhead
+
+## Integration Points
+1. arch/x86_64/gdt.rs - Core GDT/TSS allocation
+2. arch/x86_64/smp.rs - AP initialization with GDT loading
+3. arch/x86_64/mod.rs - Multi-core initialization hook
+4. kernel/src/main.rs - Boot sequence integration
+
+## Testing Strategy
+1. Compile with multicore GDT system
+2. Boot on QEMU with -smp 4 (4 CPUs)
+3. Verify serial output shows per-core GDT initialization
+4. Run multicore scheduler tests
+5. Check task execution on multiple cores
+
+## Files to Modify
+- kernel/src/arch/x86_64/gdt.rs (REPLACE with new implementation)
+- kernel/src/arch/x86_64/smp.rs (ADD gdt::init_ap_per_core() call)
+- kernel/src/arch/x86_64/mod.rs (ADD init_multicore_gdt() call)
+
+## Expected Warnings Fixed
+- Removal of unused GDT_STATE Once pattern
+- Proper per-core initialization logging
+
+## Success Criteria
+- Kernel compiles without errors
+- Serial output shows "gdt: per-core BSP GDT loaded"
+- APs initialize with "gdt: per-core AP GDT loaded lapic=X"
+- Multicore task execution works correctly
+- No panics or faults during CPU initialization
