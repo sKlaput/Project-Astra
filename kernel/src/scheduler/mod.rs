@@ -16,7 +16,7 @@ pub mod stats;
 pub mod table;
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use crate::scheduler::table::{TaskMetadata, TASK_TABLE, TABLE_CAP, table_slot};
+use crate::scheduler::table::{TASK_TABLE, TABLE_CAP, table_slot};
 
 // Re-export key types from table
 pub use table::{TaskId, TaskState};

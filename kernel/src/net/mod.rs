@@ -1,54 +1,64 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
-// ── Real networking submodules ─────────────────────────────────────────────────
-pub mod arp;
-pub mod config;
-pub mod dns;
-pub mod eth;
-pub mod http;
-pub mod icmp;
-pub mod ipv4;
-pub mod tcp;
-pub mod udp;
+// ── Network stack organized by OSI layers ──────────────────────────────────────
+
+/// Layer 2 (Data Link) — Ethernet and network configuration
+pub mod layer2;
+
+/// Layer 3 (Network) — IPv4, ARP, and ICMP
+pub mod layer3;
+
+/// Layer 4 (Transport) — TCP and UDP
+pub mod layer4;
+
+/// Application Layer — DNS and HTTP
+pub mod application;
+
+// ── Re-export commonly used types from each layer for convenience ─────────────
+
+pub use layer2::{config, eth};
+pub use layer3::{arp, icmp, ipv4};
+pub use layer4::{tcp, udp};
+pub use application::{dns, http};
 
 // ── Public init ───────────────────────────────────────────────────────────────
 
 /// Initialise the network stack.  Call once after the virtio-net driver is up.
 /// Applies a static QEMU IP configuration and logs the assigned address.
 pub fn init() {
-    config::apply_qemu_defaults();
+    layer2::config::apply_qemu_defaults();
     crate::serial::write_line("net: IP 10.0.2.15/24 gw 10.0.2.2");
 }
 
 /// Dispatch a raw Ethernet frame (with header) to the appropriate protocol handler.
 /// Call this from the RX poll loop.
 pub fn dispatch_frame(frame: &[u8]) {
-    use eth::{EthHeader, ETH_ARP, ETH_HDR, ETH_IPV4};
+    use layer2::eth::{EthHeader, ETH_ARP, ETH_HDR, ETH_IPV4};
     let Some(hdr) = EthHeader::parse(frame) else {
         return;
     };
     let payload = &frame[ETH_HDR..];
     match hdr.etype {
-        ETH_ARP => arp::handle_packet(payload),
+        ETH_ARP => layer3::arp::handle_packet(payload),
         ETH_IPV4 => handle_ipv4(payload),
         _ => {}
     }
 }
 
 fn handle_ipv4(ip_pkt: &[u8]) {
-    use ipv4::{Ipv4Header, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
+    use layer3::ipv4::{Ipv4Header, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
     let Some(hdr) = Ipv4Header::parse(ip_pkt) else {
         return;
     };
-    if !config::is_our_ip(hdr.dst) && hdr.dst != [255, 255, 255, 255] {
+    if !layer2::config::is_our_ip(hdr.dst) && hdr.dst != [255, 255, 255, 255] {
         return;
     }
     let payload = hdr.payload(ip_pkt);
     match hdr.protocol {
-        PROTO_ICMP => icmp::handle_packet(hdr.src, payload),
-        PROTO_UDP => udp::handle_packet(hdr.src, payload),
-        PROTO_TCP => tcp::handle_segment(hdr.src, payload),
+        PROTO_ICMP => layer3::icmp::handle_packet(hdr.src, payload),
+        PROTO_UDP => layer4::udp::handle_packet(hdr.src, payload),
+        PROTO_TCP => layer4::tcp::handle_segment(hdr.src, payload),
         _ => {}
     }
 }
