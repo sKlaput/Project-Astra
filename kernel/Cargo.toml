@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 default = []
+boot_probes = []
 boot-probe-baselines = []
 boot-probe-gui = []
 boot-probe-syscall-user = []
@@ -19,3 +20,4 @@ x86_64 = "0.15"
 
 [lints]
 workspace = true
+

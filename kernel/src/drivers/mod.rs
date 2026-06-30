@@ -11,6 +11,7 @@ pub mod keyboard;
 pub mod mouse;
 pub mod virtio_blk;
 pub mod virtio_net;
+pub mod virtio_common;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 

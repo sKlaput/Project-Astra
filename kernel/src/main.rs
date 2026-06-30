@@ -149,15 +149,15 @@ pub extern "C" fn kmain() -> ! {
     // Boot-time LAPIC timer probe: briefly switch the scheduler tick source
     // from PIT to LAPIC and back, logging the observed delta. Failure here
     // does not abort boot — PIT remains active.
-    boot_probes::probe_lapic_timer_switch();
+    #[cfg(feature = "boot_probes")] { boot_probes::probe_lapic_timer_switch(); }
 
-    if boot_probes::HEAP_ALLOC_FAILURE_PROBE {
+    #[cfg(feature = "boot_probes")] { if boot_probes::HEAP_ALLOC_FAILURE_PROBE {
         boot_probes::probe_alloc_failure_path();
-    }
+    } }
 
-    if boot_probes::HEAP_DEBUG {
+    #[cfg(feature = "boot_probes")] { if boot_probes::HEAP_DEBUG {
         boot_probes::heap_debug_ladder();
-    }
+    } }
 
     // Hand off to the desktop compositor event loop.
     // Falls back to scheduler::run_idle_loop if no framebuffer.
@@ -168,3 +168,4 @@ pub extern "C" fn kmain() -> ! {
 fn panic(info: &PanicInfo<'_>) -> ! {
     panic::handle(info)
 }
+
