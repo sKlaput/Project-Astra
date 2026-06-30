@@ -259,9 +259,8 @@ pub fn dequeue_next_per_cpu() -> Option<TaskId> {
             return Some(task);
         }
         
-        // Local queue empty - would do work-stealing here in full Phase 3
-        // For now, just return None
-        None
+        let cpu_id = unsafe { crate::arch::x86_64::percpu::cpu_id() };
+        unsafe { try_work_steal(cpu_id) }
     }
 }
 
@@ -327,4 +326,91 @@ unsafe fn try_dequeue_local(percpu: &mut crate::arch::x86_64::percpu::PerCpuData
     percpu.queue_tail.store(new_tail, Ordering::Release);
     
     Some(TaskId(best_id))
+}
+
+/// Try to steal a task from another CPU's queue (Phase 3.4: Work-Stealing)
+unsafe fn try_work_steal(current_cpu: u32) -> Option<TaskId> {
+    let max_cpus = 256;
+    let now = super::SCHED_TICKS.load(Ordering::Relaxed);
+    
+    // Try CPUs in round-robin order
+    for offset in 1..max_cpus {
+        let target_cpu = ((current_cpu as usize + offset) % max_cpus) as u32;
+        
+        // Try to get target CPU's data
+        let target_percpu = unsafe { crate::arch::x86_64::percpu::get_percpu_data(target_cpu) };
+        let Some(target_percpu) = target_percpu else {
+            continue;
+        };
+        
+        // Non-blocking lock acquire
+        let acquired = target_percpu.queue_lock.compare_exchange_weak(
+            0, 1, Ordering::Acquire, Ordering::Relaxed
+        ).is_ok();
+        
+        if !acquired {
+            continue;  // Lock held, skip
+        }
+        
+        let head = target_percpu.queue_head.load(Ordering::Relaxed);
+        let tail = target_percpu.queue_tail.load(Ordering::Acquire);
+        let cap = crate::arch::x86_64::percpu::queue_capacity() as u32;
+        
+        if head == tail {
+            target_percpu.queue_lock.store(0, Ordering::Release);
+            continue;  // Queue empty
+        }
+        
+        // Find best task
+        let mut best_idx = head;
+        let mut best_prio = 255u8;
+        
+        let mut i = head;
+        while i != tail {
+            let slot_idx = (i % cap) as usize;
+            let task_id = target_percpu.queue_buf[slot_idx].load(Ordering::Relaxed);
+            
+            let task_slot = table::table_slot(task_id);
+            let base = table::TASK_TABLE[task_slot].priority.load(Ordering::Relaxed);
+            
+            let effective = if AGING_ENABLED.load(Ordering::Relaxed) {
+                let enq = table::TASK_TABLE[task_slot].enqueue_tick.load(Ordering::Relaxed);
+                let waited = now.saturating_sub(enq);
+                let interval = AGING_TICKS_PER_LEVEL.load(Ordering::Relaxed).max(1);
+                let boost = (waited / interval).min(255) as u8;
+                base.saturating_sub(boost)
+            } else {
+                base
+            };
+            
+            if effective < best_prio {
+                best_prio = effective;
+                best_idx = i;
+            }
+            
+            i = i.wrapping_add(1);
+        }
+        
+        // Steal the task
+        let best_slot = (best_idx % cap) as usize;
+        let best_id = target_percpu.queue_buf[best_slot].load(Ordering::Relaxed);
+        
+        // Compact queue
+        let new_tail = tail.wrapping_sub(1);
+        let mut j = best_idx;
+        while j != new_tail {
+            let next_slot = ((j.wrapping_add(1)) % cap) as usize;
+            let current_slot = (j % cap) as usize;
+            let next_val = target_percpu.queue_buf[next_slot].load(Ordering::Relaxed);
+            target_percpu.queue_buf[current_slot].store(next_val, Ordering::Relaxed);
+            j = j.wrapping_add(1);
+        }
+        
+        target_percpu.queue_tail.store(new_tail, Ordering::Release);
+        target_percpu.queue_lock.store(0, Ordering::Release);
+        
+        return Some(TaskId(best_id));
+    }
+    
+    None
 }

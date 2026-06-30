@@ -247,3 +247,35 @@ pub unsafe fn queue_set(index: usize, task_id: u64) {
 pub const fn queue_capacity() -> usize {
     QUEUE_CAP
 }
+
+// ========== PHASE 3.4: Work-Stealing Support ==========
+
+/// Global array to store pointers to all CPUs' PerCpuData
+/// Maximum 256 CPUs supported
+use core::sync::atomic::AtomicPtr;
+static PER_CORE_DATA: [AtomicPtr<PerCpuData>; 256] = {
+    const INIT: AtomicPtr<PerCpuData> = AtomicPtr::new(core::ptr::null_mut());
+    [INIT; 256]
+};
+
+/// Register a CPU's PerCpuData for work-stealing access
+/// # Safety: Must be called exactly once per CPU during initialization
+#[inline]
+pub unsafe fn register_percpu_data(cpu_id: u32, percpu_ptr: *mut PerCpuData) {
+    if cpu_id < 256 {
+        PER_CORE_DATA[cpu_id as usize].store(percpu_ptr, Ordering::Release);
+    }
+}
+
+/// Get another CPU's PerCpuData for work-stealing
+/// # Safety: The returned reference may be invalidated if the target CPU is uninitialized
+#[inline]
+pub unsafe fn get_percpu_data(cpu_id: u32) -> Option<&'static mut PerCpuData> {
+    if cpu_id < 256 {
+        let ptr = PER_CORE_DATA[cpu_id as usize].load(Ordering::Acquire);
+        if !ptr.is_null() {
+        return Some(unsafe { &mut *ptr });
+        }
+    }
+    None
+}

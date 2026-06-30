@@ -547,11 +547,14 @@ pub fn task_wait_all_consume_signals(id: TaskId, bits: u64) -> u64 {
 // ============================================================================
 
 pub fn enqueue_task(id: TaskId) -> bool {
-    with_interrupts_masked(|| dispatch::enqueue_task_inner(id))
+    with_interrupts_masked(|| {
+        let cpu_id = unsafe { crate::arch::x86_64::percpu::cpu_id() };
+        dispatch::enqueue_task_to_cpu(id, cpu_id)
+    })
 }
 
 pub fn dequeue_next() -> Option<TaskId> {
-    with_interrupts_masked(|| dispatch::dequeue_next_inner())
+    with_interrupts_masked(|| dispatch::dequeue_next_per_cpu())
 }
 
 pub fn dispatch_once() -> bool {
@@ -853,7 +856,7 @@ pub fn init_per_cpu_scheduler(cpu_id: u32) {
 }
 
 /// Run the scheduler loop for this CPU (AP or BSP).
-/// Dispatches tasks from shared ready queue.
+/// Phase 3: Dispatches tasks from per-core ready queue with work-stealing.
 /// Never returns - runs until system shutdown.
 pub fn run() -> ! {
     let cpu_id = unsafe { 

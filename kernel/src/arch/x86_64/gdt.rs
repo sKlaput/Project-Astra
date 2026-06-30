@@ -112,7 +112,9 @@ fn gdt_state() -> &'static GdtState {
         let tss = init_tss(double_fault_stack, privilege_stack);
         
         let state = GdtState::new(double_fault_stack, privilege_stack, kernel_stack, tss, 0);
-        Box::leak(Box::new(state))
+        let state_ptr = Box::leak(Box::new(state));
+        unsafe { crate::arch::x86_64::percpu::register_percpu_data(0, state_ptr.percpu_data as *mut _) };
+        state_ptr
     })
 }
 
