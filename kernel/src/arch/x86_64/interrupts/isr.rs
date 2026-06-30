@@ -1,0 +1,108 @@
+/// LAPIC EOI register virtual address, populated by apic::install_lapic_timer.
+#[unsafe(no_mangle)]
+pub static mut LAPIC_EOI_VIRT: u64 = 0;
+
+// PIC-driven timer ISR — saves all GPRs, sends PIC master EOI, calls timer_irq_inner.
+// Returns non-zero (scheduler RSP) → preempted; tail-jumps to context_restore_to.
+core::arch::global_asm!(
+    ".intel_syntax noprefix",
+    "    .global timer_interrupt_naked",
+    "timer_interrupt_naked:",
+    "    push rax",
+    "    push rcx",
+    "    push rdx",
+    "    push rbx",
+    "    push rbp",
+    "    push rsi",
+    "    push rdi",
+    "    push r8",
+    "    push r9",
+    "    push r10",
+    "    push r11",
+    "    push r12",
+    "    push r13",
+    "    push r14",
+    "    push r15",
+    "    mov al, 0x20",
+    "    out 0x20, al",
+    "    mov rdi, rsp",
+    "    call timer_irq_inner",
+    "    test rax, rax",
+    "    jz 1f",
+    "    mov rdi, rax",
+    "    jmp context_restore_to",
+    "1:",
+    "    pop r15",
+    "    pop r14",
+    "    pop r13",
+    "    pop r12",
+    "    pop r11",
+    "    pop r10",
+    "    pop r9",
+    "    pop r8",
+    "    pop rdi",
+    "    pop rsi",
+    "    pop rbp",
+    "    pop rbx",
+    "    pop rdx",
+    "    pop rcx",
+    "    pop rax",
+    "    iretq",
+    ".att_syntax prefix",
+);
+
+extern "C" {
+    pub fn timer_interrupt_naked();
+}
+
+// LAPIC timer ISR — same shape as above but sends LAPIC EOI instead of PIC EOI.
+core::arch::global_asm!(
+    ".intel_syntax noprefix",
+    "    .global lapic_timer_interrupt_naked",
+    "lapic_timer_interrupt_naked:",
+    "    push rax",
+    "    push rcx",
+    "    push rdx",
+    "    push rbx",
+    "    push rbp",
+    "    push rsi",
+    "    push rdi",
+    "    push r8",
+    "    push r9",
+    "    push r10",
+    "    push r11",
+    "    push r12",
+    "    push r13",
+    "    push r14",
+    "    push r15",
+    "    mov rax, qword ptr [rip + LAPIC_EOI_VIRT]",
+    "    mov dword ptr [rax], 0",
+    "    mov rdi, rsp",
+    "    call timer_irq_inner",
+    "    test rax, rax",
+    "    jz 1f",
+    "    mov rdi, rax",
+    "    jmp context_restore_to",
+    "1:",
+    "    pop r15",
+    "    pop r14",
+    "    pop r13",
+    "    pop r12",
+    "    pop r11",
+    "    pop r10",
+    "    pop r9",
+    "    pop r8",
+    "    pop rdi",
+    "    pop rsi",
+    "    pop rbp",
+    "    pop rbx",
+    "    pop rdx",
+    "    pop rcx",
+    "    pop rax",
+    "    iretq",
+    ".att_syntax prefix",
+);
+
+extern "C" {
+    pub fn lapic_timer_interrupt_naked();
+}
