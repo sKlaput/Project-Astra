@@ -6,12 +6,11 @@ use crate::memory::paging::{
     hhdm_offset, lookup_page_entry_current, map_page_current, PageTableFlags, PAGE_SIZE,
 };
 
-/// Virtual address constants for persistent user-task pages.
-/// These are placed in user-accessible address space.
-pub const USER_TASK_CODE_VIRT: usize = 0x0000_4000_0000_0000; // user code page
-pub const USER_TASK_STACK_VIRT: usize = 0x0000_4000_1000_0000; // user stack page
-pub const USER_FRAMEBUFFER_VIRT: usize = 0x0000_4000_2000_0000; // user framebuffer window
-pub const USER_TASK_LIMIT: usize = 32; // max concurrent user tasks
+/// Virtual address for user framebuffer window.
+pub const USER_FRAMEBUFFER_VIRT: usize = 0x0000_4000_2000_0000;
+
+/// User task stack virtual address.
+pub const USER_TASK_STACK_VIRT: usize = 0x0000_4000_1000_0000;
 
 /// Map the boot framebuffer into the current user address space at
 /// USER_FRAMEBUFFER_VIRT, page-aligned, user-accessible, writable.
@@ -66,26 +65,4 @@ pub fn map_framebuffer_for_current_task() -> Option<(u64, u64)> {
     }
 
     Some((USER_FRAMEBUFFER_VIRT as u64, fb_bytes as u64))
-}
-
-/// Shared state for user-task communication.
-/// Used to pass data between user and kernel modes.
-#[repr(C)]
-pub struct UserTaskShared {
-    /// Exit code (result) from user-mode code.
-    pub exit_code: u64,
-    /// System call return value.
-    pub syscall_result: u64,
-    /// User-mode task ID (for validation).
-    pub task_id: u64,
-}
-
-impl UserTaskShared {
-    pub fn new() -> Self {
-        UserTaskShared {
-            exit_code: 0,
-            syscall_result: 0,
-            task_id: 0,
-        }
-    }
 }
