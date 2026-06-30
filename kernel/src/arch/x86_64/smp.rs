@@ -117,12 +117,17 @@ pub fn init() {
 
 unsafe extern "C" fn ap_entry(cpu: &Cpu) -> ! {
     // Incremental AP bring-up stage: initialize CPU feature state, load per-core GDT,
-    // set up interrupts, publish a handshake marker, then park.
+    // set per-core local storage, set up interrupts, publish a handshake marker, then park.
     cpu::early_init();
     let current_lapic = apic::lapic_id();
     
-    // Phase 2: Load per-core GDT/TSS for this AP
-    gdt::init_ap_per_core(current_lapic);
+    // Phase 2: Load per-core GDT/TSS for this AP and get GSBASE address
+    let gsbase_addr = gdt::init_ap_per_core(current_lapic);
+    
+    // Phase 2.2: Set GSBASE to enable per-core local storage access
+    unsafe {
+        cpu::set_gsbase(gsbase_addr);
+    }
     
     interrupts::init_ap_interrupts();
     let mismatch = (current_lapic != cpu.lapic_id) as u64;

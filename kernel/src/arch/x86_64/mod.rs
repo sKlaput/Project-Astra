@@ -3,6 +3,7 @@ pub mod cpu;
 pub mod gdt;
 pub mod halt;
 pub mod interrupts;
+pub mod percpu;
 pub mod ring3;
 pub mod smp;
 pub mod sysentry;

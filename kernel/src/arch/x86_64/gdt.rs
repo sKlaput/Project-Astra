@@ -6,12 +6,13 @@ use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
+use crate::arch::x86_64::percpu::PerCpuData;
+
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
 const DOUBLE_FAULT_STACK_SIZE: usize = 4096;
 const PRIVILEGE_STACK_SIZE: usize = 8192;
-const KERNEL_STACK_SIZE: usize = 16384;  // Per-core kernel stack for user transitions
-const MAX_CPUS: usize = 256;
+const KERNEL_STACK_SIZE: usize = 16384;
 
 #[repr(align(16))]
 struct InterruptStack {
@@ -32,13 +33,14 @@ struct GdtState {
     _double_fault_stack: &'static InterruptStack,
     _privilege_stack: &'static PrivilegeStack,
     _kernel_stack: &'static KernelStack,
-    tss: TaskStateSegment,
+    _tss: &'static TaskStateSegment,
     gdt: GlobalDescriptorTable,
     code_selector: SegmentSelector,
     data_selector: SegmentSelector,
     tss_selector: SegmentSelector,
     ring3_code_selector: SegmentSelector,
     ring3_data_selector: SegmentSelector,
+    percpu_data: &'static mut PerCpuData,
 }
 
 impl GdtState {
@@ -46,29 +48,55 @@ impl GdtState {
         double_fault_stack: &'static InterruptStack,
         privilege_stack: &'static PrivilegeStack,
         kernel_stack: &'static KernelStack,
+        tss: &'static TaskStateSegment,
+        lapic_id: u32,
     ) -> Self {
+        let mut gdt = GlobalDescriptorTable::new();
+
+        let code_selector = gdt.append(Descriptor::kernel_code_segment());
+        let data_selector = gdt.append(Descriptor::kernel_data_segment());
+        let ring3_data_selector = gdt.append(Descriptor::user_data_segment());
+        let ring3_code_selector = gdt.append(Descriptor::user_code_segment());
+        let tss_selector = gdt.append(Descriptor::tss_segment(tss));
+
+        // Allocate per-core data structure
+        let percpu_data = PerCpuData::new(lapic_id);
+
         Self {
             _double_fault_stack: double_fault_stack,
             _privilege_stack: privilege_stack,
             _kernel_stack: kernel_stack,
-            tss: TaskStateSegment::new(),
-            gdt: GlobalDescriptorTable::new(),
-            code_selector: SegmentSelector(0),
-            data_selector: SegmentSelector(0),
-            tss_selector: SegmentSelector(0),
-            ring3_code_selector: SegmentSelector(0),
-            ring3_data_selector: SegmentSelector(0),
+            _tss: tss,
+            gdt,
+            code_selector,
+            data_selector,
+            tss_selector,
+            ring3_code_selector,
+            ring3_data_selector,
+            percpu_data,
         }
     }
 }
 
-/// Global GDT state for BSP
-static GDT_STATE: Once<&'static GdtState> = Once::new();
+/// Create and initialize a TSS with the given stacks
+fn init_tss(
+    double_fault_stack: &InterruptStack,
+    privilege_stack: &PrivilegeStack,
+) -> &'static TaskStateSegment {
+    let mut tss = Box::new(TaskStateSegment::new());
+    
+    let df_stack_start = VirtAddr::from_ptr(double_fault_stack);
+    let df_stack_end = df_stack_start + DOUBLE_FAULT_STACK_SIZE as u64;
+    tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = df_stack_end;
 
-/// Per-core GDT states (Phase 2: multicore support)
-static PER_CORE_GDTS: Once<[Option<&'static GdtState>; MAX_CPUS]> = Once::new();
-static PER_CORE_ALLOC_DONE: core::sync::atomic::AtomicBool = 
-    core::sync::atomic::AtomicBool::new(false);
+    let priv_stack_start = VirtAddr::from_ptr(privilege_stack);
+    let priv_stack_end = priv_stack_start + PRIVILEGE_STACK_SIZE as u64;
+    tss.privilege_stack_table[0] = priv_stack_end;
+    
+    Box::leak(tss)
+}
+
+static GDT_STATE: Once<&'static GdtState> = Once::new();
 
 fn gdt_state() -> &'static GdtState {
     GDT_STATE.call_once(|| {
@@ -81,29 +109,15 @@ fn gdt_state() -> &'static GdtState {
         let kernel_stack = Box::leak(Box::new(KernelStack {
             _bytes: [0; KERNEL_STACK_SIZE],
         }));
-        let state: &'static mut GdtState =
-            Box::leak(Box::new(GdtState::new(double_fault_stack, privilege_stack, kernel_stack)));
+        let tss = init_tss(double_fault_stack, privilege_stack);
         
-        let stack_start = VirtAddr::from_ptr(state._double_fault_stack);
-        let stack_end = stack_start + DOUBLE_FAULT_STACK_SIZE as u64;
-        let privilege_stack_start = VirtAddr::from_ptr(state._privilege_stack);
-        let privilege_stack_end = privilege_stack_start + PRIVILEGE_STACK_SIZE as u64;
-        
-        state.tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = stack_end;
-        state.tss.privilege_stack_table[0] = privilege_stack_end;
-
-        state.code_selector = state.gdt.append(Descriptor::kernel_code_segment());
-        state.data_selector = state.gdt.append(Descriptor::kernel_data_segment());
-        state.ring3_data_selector = state.gdt.append(Descriptor::user_data_segment());
-        state.ring3_code_selector = state.gdt.append(Descriptor::user_code_segment());
-        state.tss_selector = state.gdt.append(Descriptor::tss_segment(&state.tss));
-
-        state
+        let state = GdtState::new(double_fault_stack, privilege_stack, kernel_stack, tss, 0);
+        Box::leak(Box::new(state))
     })
 }
 
-/// Initialize per-core GDT for a specific LAPIC ID (called during AP startup)
-fn alloc_gdt_for_lapic(lapic_id: u32) -> &'static GdtState {
+/// Initialize per-core GDT and allocate per-core data
+fn alloc_gdt_for_lapic(lapic_id: u32) -> (&'static GdtState, u64) {
     let double_fault_stack = Box::leak(Box::new(InterruptStack {
         _bytes: [0; DOUBLE_FAULT_STACK_SIZE],
     }));
@@ -113,24 +127,13 @@ fn alloc_gdt_for_lapic(lapic_id: u32) -> &'static GdtState {
     let kernel_stack = Box::leak(Box::new(KernelStack {
         _bytes: [0; KERNEL_STACK_SIZE],
     }));
-    let state: &'static mut GdtState =
-        Box::leak(Box::new(GdtState::new(double_fault_stack, privilege_stack, kernel_stack)));
+    let tss = init_tss(double_fault_stack, privilege_stack);
     
-    let stack_start = VirtAddr::from_ptr(state._double_fault_stack);
-    let stack_end = stack_start + DOUBLE_FAULT_STACK_SIZE as u64;
-    let privilege_stack_start = VirtAddr::from_ptr(state._privilege_stack);
-    let privilege_stack_end = privilege_stack_start + PRIVILEGE_STACK_SIZE as u64;
+    let state = GdtState::new(double_fault_stack, privilege_stack, kernel_stack, tss, lapic_id);
+    let gsbase_addr = state.percpu_data as *const _ as u64;
+    let state_ptr = Box::leak(Box::new(state));
     
-    state.tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = stack_end;
-    state.tss.privilege_stack_table[0] = privilege_stack_end;
-
-    state.code_selector = state.gdt.append(Descriptor::kernel_code_segment());
-    state.data_selector = state.gdt.append(Descriptor::kernel_data_segment());
-    state.ring3_data_selector = state.gdt.append(Descriptor::user_data_segment());
-    state.ring3_code_selector = state.gdt.append(Descriptor::user_code_segment());
-    state.tss_selector = state.gdt.append(Descriptor::tss_segment(&state.tss));
-
-    state
+    (state_ptr, gsbase_addr)
 }
 
 /// Install a kernel-owned GDT for the BSP
@@ -146,9 +149,13 @@ pub fn init() {
         FS::set_reg(state.data_selector);
         GS::set_reg(state.data_selector);
         load_tss(state.tss_selector);
+        
+        // Set GSBASE for BSP per-core data
+        crate::arch::x86_64::cpu::set_gsbase(state.percpu_data as *const _ as u64);
     }
 
     crate::serial::write_line("gdt: kernel GDT + TSS + ring-3 descriptors active");
+    crate::serial::write_line("percpu: BSP per-core data initialized cpu_id=0");
 }
 
 /// Phase 2: Initialize multicore GDT system (called from smp::init)
@@ -156,13 +163,12 @@ pub fn init_multicore_gdt(cpu_count: usize) {
     crate::serial::write_str("gdt: multicore initialization for ");
     crate::serial::write_u64(cpu_count as u64);
     crate::serial::write_line(" CPUs");
-    
-    PER_CORE_ALLOC_DONE.store(true, core::sync::atomic::Ordering::Release);
 }
 
 /// Load per-core GDT for an Application Processor
-pub fn init_ap_per_core(lapic_id: u32) {
-    let state = alloc_gdt_for_lapic(lapic_id);
+/// Returns the GSBASE address that should be set
+pub fn init_ap_per_core(lapic_id: u32) -> u64 {
+    let (state, gsbase_addr) = alloc_gdt_for_lapic(lapic_id);
 
     unsafe {
         state.gdt.load();
@@ -178,6 +184,8 @@ pub fn init_ap_per_core(lapic_id: u32) {
     crate::serial::write_str("gdt: per-core AP GDT loaded lapic=");
     crate::serial::write_u32(lapic_id);
     crate::serial::write_line("");
+
+    gsbase_addr
 }
 
 /// Backward compat wrapper for init_ap

@@ -1,0 +1,85 @@
+# PHASE 2.1 QUICK TEST - Copy-Paste Ready Commands (CORRECTED PATHS)
+
+## Build
+cd C:\Users\szymo\OneDrive\Desktop\OS
+cargo build --release
+
+## Note: Kernel output is in target/x86_64-os/release/kernel (custom target)
+## NOT in kernel/target/release/kernel
+
+## Test 1: Single-Core (Backward Compatibility)
+qemu-system-x86_64 -kernel target/x86_64-os/release/kernel -smp 1 -serial stdio
+
+Expected output:
+  gdt: kernel GDT + TSS + ring-3 descriptors active
+  smp: single-core topology
+Success: Boot completes, system runs normally
+
+## Test 2: Dual-Core (Multi-Core Initialization)
+qemu-system-x86_64 -kernel target/x86_64-os/release/kernel -smp 2 -serial stdio
+
+Expected output:
+  gdt: kernel GDT + TSS + ring-3 descriptors active
+  gdt: multicore initialization for 2 CPUs
+  smp: arming APs count=1
+  gdt: per-core AP GDT loaded lapic=1
+  smp: APs started=1 expected=1 OK
+  smp: AP handshakes=1 expected=1 OK
+Success: Both CPUs boot, AP GDT loads correctly
+
+## Test 3: Quad-Core (Maximum Multi-Core Test)
+qemu-system-x86_64 -kernel target/x86_64-os/release/kernel -smp 4 -serial stdio
+
+Expected output:
+  gdt: kernel GDT + TSS + ring-3 descriptors active
+  gdt: multicore initialization for 4 CPUs
+  smp: arming APs count=3
+  gdt: per-core AP GDT loaded lapic=1
+  gdt: per-core AP GDT loaded lapic=2
+  gdt: per-core AP GDT loaded lapic=3
+  smp: APs started=3 expected=3 OK
+  smp: AP handshakes=3 expected=3 OK
+Success: All 4 CPUs boot, each AP loads per-core GDT
+
+## Test 4: Desktop Environment Multi-Core
+qemu-system-x86_64 -kernel target/x86_64-os/release/kernel -smp 2 -serial stdio &
+
+In the desktop:
+  1. Open Calculator app
+  2. Open File Manager
+  3. Run "top" command in terminal (if available)
+  
+Expected: Apps run smoothly with 2 CPUs available
+
+## Test 5: Network Test (Verify no regressions)
+In desktop, run:
+  ping 10.0.2.2  (should respond)
+  netcheck       (should pass)
+
+Expected: Network still works with multicore GDT
+
+## Debugging: If Tests Fail
+
+### Verify kernel binary exists:
+  ls -lah target/x86_64-os/release/kernel
+  Should show: 804K executable file
+
+### Check compilation
+  cargo build --release 2>&1 | grep error
+  Should show: (no output) = success
+
+### Check GDT messages
+  qemu-system-x86_64 -kernel target/x86_64-os/release/kernel -smp 2 -serial stdio 2>&1 | grep "gdt:"
+  Should show all GDT initialization messages
+
+## Expected Success Criteria
+
+After all tests:
+  ✓ Kernel binary exists at target/x86_64-os/release/kernel (804 KB)
+  ✓ Kernel compiles with 0 errors
+  ✓ Single-core boot works (backward compatibility)
+  ✓ Dual-core: APs load per-core GDT (lapic=1)
+  ✓ Quad-core: All APs load per-core GDT (lapic=1,2,3)
+  ✓ Desktop GUI loads with 2+ CPUs
+  ✓ Network (ping, netcheck) still works
+  ✓ No panics or faults related to GDT

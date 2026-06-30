@@ -170,3 +170,68 @@ fn enable_kernel_protections() {
         SMAP_ENABLED.store(true, Ordering::Relaxed);
     }
 }
+
+
+
+/// Write to a Model-Specific Register (MSR)
+/// 
+/// # Safety
+/// Must only be used to write to safe MSRs (e.g., GSBASE, FSBASE).
+#[inline(always)]
+pub unsafe fn wrmsr(msr: u32, value: u64) {
+    let low = value as u32;
+    let high = (value >> 32) as u32;
+    unsafe {
+        core::arch::asm!(
+            "wrmsr",
+            in("ecx") msr,
+            in("eax") low,
+            in("edx") high,
+            options(nostack)
+        );
+    }
+}
+
+/// Read from a Model-Specific Register (MSR)
+/// 
+/// # Safety
+/// Must only be used to read safe MSRs (e.g., GSBASE, FSBASE).
+#[inline(always)]
+pub unsafe fn rdmsr(msr: u32) -> u64 {
+    let low: u32;
+    let high: u32;
+    unsafe {
+        core::arch::asm!(
+            "rdmsr",
+            in("ecx") msr,
+            out("eax") low,
+            out("edx") high,
+            options(nostack)
+        );
+    }
+    ((high as u64) << 32) | (low as u64)
+}
+
+/// Set the GS segment base address via GSBASE MSR
+/// 
+/// # Safety
+/// Must be called during per-core initialization before using per-core data.
+#[inline(always)]
+pub unsafe fn set_gsbase(addr: u64) {
+    const GS_BASE_MSR: u32 = 0xC0000101;
+    unsafe {
+        wrmsr(GS_BASE_MSR, addr);
+    }
+}
+
+/// Get the current GS segment base address
+/// 
+/// # Safety
+/// Safe to call anytime, but only meaningful after set_gsbase has been called.
+#[inline(always)]
+pub unsafe fn get_gsbase() -> u64 {
+    const GS_BASE_MSR: u32 = 0xC0000101;
+    unsafe {
+        rdmsr(GS_BASE_MSR)
+    }
+}
