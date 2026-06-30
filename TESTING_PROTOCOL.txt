@@ -1,0 +1,188 @@
+================================================================================
+ASTRA OS - TESTING PROTOCOL FOR ALL FUTURE DEVELOPMENT
+================================================================================
+
+GOLDEN RULE: Every time I make changes, you should test using this protocol.
+
+This ensures:
+- Changes are validated before committing
+- Regressions are caught immediately
+- OS remains stable and functional
+- High confidence in code quality
+
+================================================================================
+PROTOCOL OVERVIEW (5 Steps, 5-10 minutes)
+================================================================================
+
+After I make changes:
+
+STEP 1: Verify Compilation (30 seconds)
+  cargo check
+  Should show: "Finished ... target(s) in X.XXs"
+
+STEP 2: Build Release Binary (5 seconds)
+  cargo build --release
+  Should show: "Finished `release` ... in X.XXs"
+
+STEP 3: Boot Test (10 seconds)
+  qemu-system-x86_64 -drive format=raw,file=disk.img -m 2G -enable-kvm
+  Watch for: Desktop appears, no panics
+
+STEP 4: Run Functionality Tests (5 minutes)
+  ping 8.8.8.8, netcheck, ps, ls /
+  Click applications in GUI
+
+STEP 5: Verify No Regressions (1-2 minutes)
+  Mouse smooth, windows drag, terminal works, files persist
+
+RESULT: All pass? Changes are GOOD!
+
+================================================================================
+QUICK CHECKLIST (Use After Each Change)
+================================================================================
+
+After I provide code changes:
+
+[ ] Read my commit message and testing instructions
+[ ] Run: cargo check
+    ✓ Expected: Finished in ~1.2s
+    ✗ If error: Stop, wait for fix
+
+[ ] Run: cargo build --release
+    ✓ Expected: Finished in ~4s
+    ✗ If error: Stop, wait for fix
+
+[ ] Boot in QEMU
+    ✓ Expected: Desktop appears
+    ✗ If no boot: Stop, report error
+
+[ ] Test in QEMU terminal
+    ping 8.8.8.8
+    netcheck
+    ps
+    ls /
+    ✓ Expected: All work
+    ✗ If any fail: Report which one
+
+[ ] Test GUI
+    Click File Manager, Text Editor, Calculator
+    ✓ Expected: Launch instantly
+    ✗ If crash: Report which app
+
+[ ] Verify Regressions
+    Move mouse, drag windows, type in terminal
+    Create/delete files
+    ✓ Expected: All smooth
+    ✗ If lag/crash: Report the issue
+
+FINAL RESULT:
+  All checkmarks? → "Tests pass! Ready to commit."
+  Any failures? → "Test X failed with error: [error]"
+
+================================================================================
+TESTING TIME ESTIMATE
+================================================================================
+
+Step 1 (Compile):     30 seconds
+Step 2 (Build):       5 seconds
+Step 3 (Boot):        10 seconds
+Step 4 (Functions):   5 minutes
+Step 5 (Regression):  1-2 minutes
+              --------
+TOTAL:         ~7-8 minutes per change
+
+================================================================================
+WHAT EACH TEST VERIFIES
+================================================================================
+
+cargo check
+  → Code syntax is correct
+  → All imports are valid
+  → No obvious type errors
+
+cargo build --release
+  → All code compiles
+  → All modules link correctly
+  → No undefined symbols
+
+QEMU Boot
+  → Kernel initializes
+  → Memory system works
+  → CPU/interrupts work
+  → Desktop system works
+
+Functionality Tests
+  → Network stack works (ping)
+  → All layers work (netcheck)
+  → Process system works (ps)
+  → File system works (ls)
+
+GUI Tests
+  → Desktop system responsive
+  → Applications launch
+  → No crashes during use
+
+Regression Tests
+  → Nothing else broke
+  → Performance not degraded
+  → File persistence works
+
+================================================================================
+HOW TO REPORT TEST RESULTS
+================================================================================
+
+If ALL tests pass:
+  "Tests complete! All checks pass:
+   - Compilation: OK
+   - Boot: OK
+   - Network: OK
+   - GUI: OK
+   - Regressions: None
+   Ready to merge!"
+
+If ANY test fails:
+  "Test failed at step X:
+   - Error: [error message or description]
+   - Step: [which command failed]
+   - Expected: [what should happen]
+   - Actual: [what happened]
+   Needs fixing before merge."
+
+================================================================================
+USING QUICK_TEST.TXT
+================================================================================
+
+QUICK_TEST.txt is your quick reference.
+
+Keep it nearby and:
+1. Copy commands from it
+2. Run them one by one
+3. Check outputs match "Expected"
+4. Report final result
+
+It's designed for speed - full test in ~8 minutes!
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+- Don't skip steps (each one catches different issues)
+- Don't modify the testing procedure
+- Always test BEFORE saying "ready to merge"
+- Report failures with details (error messages)
+- This is the quality gate for all changes
+
+================================================================================
+SUMMARY: Your Testing Responsibility
+================================================================================
+
+After I make changes:
+
+1. Follow QUICK_TEST.txt (5 steps, ~8 minutes)
+2. Report results clearly
+3. If all pass: "Tests pass, ready!"
+4. If any fail: Describe the failure
+5. I'll fix and resubmit if needed
+
+This ensures Astra OS stays stable and high-quality!
+
