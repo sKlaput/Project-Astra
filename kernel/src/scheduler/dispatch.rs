@@ -194,3 +194,11 @@ pub fn task_priority(id: TaskId) -> u8 {
         128
     }
 }
+
+pub fn aging_enabled() -> bool {
+    AGING_ENABLED.load(Ordering::Relaxed)
+}
+
+pub fn aging_ticks_per_level() -> u64 {
+    AGING_TICKS_PER_LEVEL.load(Ordering::Relaxed)
+}
