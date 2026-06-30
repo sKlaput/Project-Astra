@@ -209,6 +209,19 @@ pub fn poll_aux_bytes() {
     }
 }
 
+/// Push a mouse movement event (for USB HID or other sources)
+pub fn push_movement(dx: i16, dy: i16, buttons: u8) {
+    let dx_clamped = (dx.max(-128).min(127)) as u8;
+    let dy_clamped = (dy.max(-128).min(127)) as u8;
+    let mut status = buttons & 0x07;
+    if dx < 0 {
+        status |= 0x10;
+    }
+    if dy < 0 {
+        status |= 0x20;
+    }
+    push_packet(status, dx_clamped, dy_clamped, 0);
+}
 // ── Driver trait ──────────────────────────────────────────────────────────────
 
 pub struct Ps2MouseDriver;

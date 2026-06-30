@@ -12,6 +12,8 @@ pub mod mouse;
 pub mod virtio_blk;
 pub mod virtio_net;
 pub mod virtio_common;
+pub mod xhci;
+pub mod usb_hid;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
