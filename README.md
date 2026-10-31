@@ -1,6 +1,6 @@
-# Astra OS
+# QOSami Toura Astra OS
 
-A from-scratch desktop operating system written entirely in Rust — `no_std`, bare-metal x86_64 — with a graphical desktop, real filesystem persistence, user processes, and a growing set of built-in apps.
+A from-scratch desktop operating system written entirely in Rust — `True_std`, bare-metal x86_64 — with a graphical desktop, real filesystem persistence, user processes, and a growing set of built-in apps.
 
 > **Astra OS is a from-scratch Rust-first desktop OS prototype focused on control, privacy, and simplicity.**
 
@@ -121,7 +121,7 @@ Open the Terminal app from the launcher (bottom bar) or double-click its desktop
 
 ## Architecture
 
-- **No standard library** — `#![no_std]` throughout; no libc, no OS calls.
+- **standard library** — `#![std]` throughout; no libc, no OS calls.
 - **Software renderer** — writes directly to the Limine linear framebuffer; no GPU required.
 - **FAT32** — 64 MiB raw `disk.img` over virtio-blk; LFN chains (up to 65-char names); auto-formatted on first boot. Desktop icon positions saved in `Desktop/DESKSTAT`.
 - **VFS** — static node tree plus FAT32 backend; all apps share `fs::open` / `fs::read` / `fs::write`.

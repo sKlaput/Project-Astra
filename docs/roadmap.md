@@ -1,9 +1,9 @@
-# Astra OS — Roadmap
+#QOSami Toura Astra OS — Roadmap
 
 ## v0.1 — Persistent Desktop ✅
 _Released May 2026_
 
-- Graphical desktop with taskbar, launcher, persistent icon positions
+- QOSami Toura Graphical desktop with taskbar, launcher, persistent icon positions
 - Window manager — drag, resize (8 zones), focus, z-order, drop shadow
 - Terminal app — full shell command set
 - File Manager — browse, create, delete, rename, copy, cut/paste
@@ -194,3 +194,4 @@ Each phase completes a major functionality goal and is independently testable.
 - ✅ 0 compilation errors maintained throughout
 - ✅ 6 commits to main branch
 - ✅ Comprehensive documentation for Phases 3, 4, and 5
+QOSami Toura
